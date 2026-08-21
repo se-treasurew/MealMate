@@ -1,0 +1,44 @@
+# 本地环境与密钥
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/venv/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.coverage
+**/htmlcov/
+
+# 数据库与运行时文件
+**/*.db
+**/*.db-*
+backend/data/
+backend/uploads/
+
+# Node 与构建产物
+**/node_modules/
+**/dist/
+**/dev-dist/
+**/.cache/
+**/coverage/
+
+# IDE、操作系统与本地工具
+.vscode/
+.idea/
+.claude/
+.workbuddy/
+.zcode/
+.local/
+.worktrees/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# 日志与本地 Docker 覆盖
+**/*.log
+docker-compose.override.yml

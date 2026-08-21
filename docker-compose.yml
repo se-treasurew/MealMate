@@ -1,0 +1,55 @@
+services:
+  backend:
+    build: ./backend
+    container_name: mealmate-backend
+    restart: unless-stopped
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/uploads:/app/uploads
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./data/mealmate.db
+      - JWT_SECRET=${JWT_SECRET:?请设置 JWT_SECRET}
+      - ADMIN_INITIAL_PASSWORD=${ADMIN_INITIAL_PASSWORD:?请设置 ADMIN_INITIAL_PASSWORD}
+      - JWT_ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=120
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+      - UPLOAD_DIR=uploads
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    expose:
+      - "8000"
+    networks:
+      - mealmate-network
+
+  frontend:
+    build: ./frontend
+    container_name: mealmate-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - mealmate-network
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: mealmate-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - mealmate-network
+
+networks:
+  mealmate-network:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

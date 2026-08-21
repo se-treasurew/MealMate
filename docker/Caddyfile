@@ -1,0 +1,53 @@
+# 将此域名改为你的实际域名
+# mealmate.yourdomain.com {
+#     reverse_proxy frontend:80
+# }
+
+# 本地开发配置（不使用 HTTPS）
+:80 {
+    # 在 multipart 解析和鉴权之前限制上传请求体。
+    @avatarUpload path /api/auth/avatar
+    @dishImages path_regexp dishImages ^/api/dishes/[0-9]+/images$
+
+    # route 保持以下顺序，避免通用 /api/* 规则先于上传专用规则匹配。
+    route {
+        handle @avatarUpload {
+            request_body {
+                max_size 6MB
+            }
+            reverse_proxy backend:8000
+        }
+
+        handle @dishImages {
+            request_body {
+                max_size 32MB
+            }
+            reverse_proxy backend:8000
+        }
+
+        # 其他 API 请求不应携带大请求体。
+        handle /api/* {
+            request_body {
+                max_size 1MB
+            }
+            reverse_proxy backend:8000
+        }
+
+        handle /uploads/* {
+            reverse_proxy backend:8000
+        }
+
+        handle /docs* {
+            reverse_proxy backend:8000
+        }
+
+        handle /openapi.json {
+            reverse_proxy backend:8000
+        }
+
+        # 其余请求交给前端 SPA
+        handle {
+            reverse_proxy frontend:80
+        }
+    }
+}

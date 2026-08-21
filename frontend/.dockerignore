@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+dev-dist/
+.cache/
+coverage/
+*.log
+README.md

@@ -1,0 +1,28 @@
+# FastAPI 核心
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+python-multipart==0.0.32
+
+# 数据库
+sqlalchemy==2.0.52
+alembic==1.19.1
+aiosqlite==0.22.1
+greenlet==3.5.5
+
+# 认证
+PyJWT==2.13.0
+passlib==1.7.4
+bcrypt==4.2.1
+cryptography==50.0.0
+python-dotenv==1.2.3
+
+# 图片处理
+Pillow==12.3.0
+
+# Web Push (可选)
+py-vapid==1.9.4
+pywebpush==2.4.0
+
+# 数据校验与配置
+pydantic==2.12.5
+pydantic-settings==2.15.0
