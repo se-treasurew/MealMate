@@ -23,6 +23,7 @@ export default defineConfig({
         theme_color: '#FF6B35',
         background_color: '#FFFFFF',
         display: 'standalone',
+        lang: 'zh-CN',
         start_url: '/',
         scope: '/',
         icons: [

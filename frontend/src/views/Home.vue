@@ -63,42 +63,57 @@
 
       <!-- 菜品列表 -->
       <div class="dish-list" v-if="dishes.length > 0">
-        <div v-for="dish in dishes" :key="dish.id" class="dish-card-large">
-          <div class="dish-card-image" @click="goDishDetail(dish.id)">
-            <img v-if="getCoverImage(dish)" :src="getCoverImage(dish)" :alt="dish.name" />
-            <div v-else class="dish-card-placeholder">
-              <van-icon name="photo-o" size="48" />
-            </div>
-          </div>
-          <div class="dish-card-content">
-            <div class="dish-card-header">
-              <h3 class="dish-card-title" @click="goDishDetail(dish.id)">{{ dish.name }}</h3>
-              <van-button
-                round
-                size="small"
-                icon="plus"
-                type="primary"
-                class="quick-add-btn"
-                @click.stop="quickAddToCart(dish)"
+        <article
+          v-for="dish in dishes"
+          :key="dish.id"
+          class="dish-card"
+        >
+          <button
+            type="button"
+            class="dish-card-main"
+            :aria-label="`查看菜品：${dish.name}`"
+            @click="goDishDetail(dish.id)"
+          >
+            <div class="dish-card-image">
+              <img
+                v-if="getCoverImage(dish) && !isImageBroken(dish)"
+                :src="getCoverImage(dish)"
+                :alt="dish.name"
+                @error="markImageBroken(dish.id)"
               />
+              <div v-else class="dish-card-placeholder">
+                <van-icon name="photo-o" size="32" />
+              </div>
             </div>
-            <div class="dish-card-tags">
-              <van-tag plain v-if="getCategoryName(dish.category_id)">
-                {{ getCategoryName(dish.category_id) }}
-              </van-tag>
-              <van-tag
-                v-for="tag in dish.tags"
-                :key="tag.id"
-                type="warning"
-              >
-                {{ tag.name }}
-              </van-tag>
+            <div class="dish-card-content">
+              <h3 class="dish-card-title">{{ dish.name }}</h3>
+              <div class="dish-card-tags">
+                <van-tag plain v-if="getCategoryName(dish.category_id)">
+                  {{ getCategoryName(dish.category_id) }}
+                </van-tag>
+                <van-tag
+                  v-for="tag in dish.tags"
+                  :key="tag.id"
+                  type="warning"
+                >
+                  {{ tag.name }}
+                </van-tag>
+              </div>
+              <p class="dish-card-desc" v-if="dish.description">
+                {{ dish.description.substring(0, 40) }}{{ dish.description.length > 40 ? '...' : '' }}
+              </p>
             </div>
-            <p class="dish-card-desc" v-if="dish.description">
-              {{ dish.description.substring(0, 40) }}{{ dish.description.length > 40 ? '...' : '' }}
-            </p>
-          </div>
-        </div>
+          </button>
+          <van-button
+            round
+            size="small"
+            icon="plus"
+            type="primary"
+            class="quick-add-btn"
+            aria-label="加入购物车"
+            @click="quickAddToCart(dish)"
+          />
+        </article>
       </div>
       <van-empty v-else description="暂无菜品" image="search">
         <van-button round type="primary" @click="loadDishes">刷新</van-button>
@@ -126,6 +141,7 @@ const searchKeyword = ref('')
 const activeCategory = ref(0)
 const categories = ref<Category[]>([])
 const dishes = ref<Dish[]>([])
+const brokenImageIds = ref(new Set<number>())
 
 // 加载分类
 const loadCategories = async () => {
@@ -145,6 +161,7 @@ const loadDishes = async () => {
       category_id: activeCategory.value || undefined,
     })
     dishes.value = data
+    brokenImageIds.value = new Set()
   } catch (e) {
     showToast('加载菜品失败')
   }
@@ -159,6 +176,12 @@ const getCoverImage = (dish: Dish) => {
     return imageUrl(dish.images[0].thumbnail_path || dish.images[0].image_path)
   }
   return ''
+}
+
+const isImageBroken = (dish: Dish) => brokenImageIds.value.has(dish.id)
+
+const markImageBroken = (dishId: number) => {
+  brokenImageIds.value = new Set(brokenImageIds.value).add(dishId)
 }
 
 // 获取分类名称
@@ -213,31 +236,55 @@ onMounted(async () => {
   z-index: 10;
 }
 
-.dish-list {
-  padding: 12px;
-}
-
-/* 大图卡片样式 */
-.dish-card-large {
+.dish-card {
+  position: relative;
+  min-height: 104px;
   background: white;
   border-radius: 12px;
   overflow: hidden;
-  margin-bottom: 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transition: box-shadow 0.2s;
+  transition: box-shadow 0.2s, transform 0.2s;
 }
 
-.dish-card-large:active {
+.dish-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.dish-card-main {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-height: 104px;
+  padding: 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dish-card-main:focus-visible {
+  outline: 2px solid var(--van-primary-color);
+  outline-offset: -2px;
+}
+
+.dish-card:has(.dish-card-main:active) {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transform: translateY(1px);
 }
 
 .dish-card-image {
-  width: 100%;
-  height: 200px;
+  flex: 0 0 104px;
+  width: 104px;
+  height: 104px;
   overflow: hidden;
   position: relative;
   background: #f5f5f5;
-  cursor: pointer;
+  border-radius: 8px;
 }
 
 .dish-card-image img {
@@ -256,15 +303,11 @@ onMounted(async () => {
 }
 
 .dish-card-content {
-  padding: 12px;
-}
-
-.dish-card-header {
+  min-width: 0;
+  flex: 1;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  flex-direction: column;
+  padding: 2px 42px 2px 12px;
 }
 
 .dish-card-title {
@@ -273,12 +316,18 @@ onMounted(async () => {
   color: #262626;
   margin: 0;
   flex: 1;
-  cursor: pointer;
   line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .quick-add-btn {
-  flex-shrink: 0;
+  position: absolute;
+  top: 14px;
+  right: 12px;
+  z-index: 1;
 }
 
 .dish-card-tags {
@@ -292,6 +341,18 @@ onMounted(async () => {
   font-size: 13px;
   color: #8c8c8c;
   line-height: 1.5;
-  margin: 0;
+  margin: auto 0 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+@media (max-width: 420px) {
+  .dish-card-image {
+    flex-basis: 88px;
+    width: 88px;
+    height: 88px;
+  }
 }
 </style>
