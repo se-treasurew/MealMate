@@ -213,7 +213,7 @@ const { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, onClickCapture } =
       return index >= 0 && index < ORDER_TABS.length - 1
     },
     canPrevious: () => statusIndex() > 0,
-    excludeSelector: '.van-nav-bar, .van-tabbar',
+    excludeSelector: '.van-nav-bar, .van-tabbar, .van-tabs__wrap',
   })
 
 const onRefresh = async (filter: OrderStatusFilter) => {

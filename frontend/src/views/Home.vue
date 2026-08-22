@@ -284,7 +284,7 @@ const { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, onClickCapture } =
       return index >= 0 && index < categoryTabs.value.length - 1
     },
     canPrevious: () => categoryIndex() > 0,
-    excludeSelector: '.van-nav-bar, .van-tabbar',
+    excludeSelector: '.van-nav-bar, .van-tabbar, .van-search, .van-tabs__wrap',
   })
 
 // 获取封面图

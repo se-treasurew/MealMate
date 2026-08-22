@@ -43,7 +43,7 @@ class SwipeTabSourceTests(unittest.TestCase):
         self.assertIn("if (event.touches.length !== 1) {\n      cancelGesture()", source)
         self.assertIn("if (event.touches.length !== 0) {\n      resetGesture()", source)
 
-    def test_fixed_navigation_bars_are_excluded_from_page_swipes(self):
+    def test_navigation_and_filter_controls_are_excluded_from_page_swipes(self):
         composable = self.read_composable("useHorizontalSwipe.ts")
 
         for token in (
@@ -56,12 +56,18 @@ class SwipeTabSourceTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, composable)
 
-        for view_name in ("Home.vue", "Orders.vue"):
+        excluded_selectors = {
+            "Home.vue": (
+                "excludeSelector: '.van-nav-bar, .van-tabbar, "
+                ".van-search, .van-tabs__wrap'"
+            ),
+            "Orders.vue": (
+                "excludeSelector: '.van-nav-bar, .van-tabbar, .van-tabs__wrap'"
+            ),
+        }
+        for view_name, expected in excluded_selectors.items():
             with self.subTest(view=view_name):
-                self.assertIn(
-                    "excludeSelector: '.van-nav-bar, .van-tabbar'",
-                    self.read_view(view_name),
-                )
+                self.assertIn(expected, self.read_view(view_name))
 
     def test_home_uses_page_swipe_category_panels_with_isolated_state(self):
         source = self.read_view("Home.vue")
