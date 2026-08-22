@@ -103,6 +103,9 @@ jobs:
       - name: 构建 backend 与 frontend 镜像
         run: docker compose build backend frontend
 
+      - name: 验证前端 Nginx 配置
+        run: docker compose run --rm --no-deps frontend nginx -t
+
       - name: 验证代理层在 multipart 解析前拒绝超大请求
         shell: bash
         run: |

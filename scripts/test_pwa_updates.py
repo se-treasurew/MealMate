@@ -75,6 +75,26 @@ class PwaUpdateSourceTests(unittest.TestCase):
             source,
         )
 
+    def test_nginx_hash_regex_is_quoted_for_nginx_parser(self):
+        source = self.read("frontend/nginx.conf")
+
+        self.assertIn(
+            'location ~* "^/assets/[^/]+[-_][A-Za-z0-9_-]{8,}[.](css|js|woff|woff2)$" {',
+            source,
+        )
+        self.assertNotIn(
+            "location ~* ^/assets/[^/]+[-_][A-Za-z0-9_-]{8,}",
+            source,
+        )
+
+    def test_ci_validates_frontend_nginx_configuration(self):
+        source = self.read(".github/workflows/release-check.yml")
+
+        self.assertIn(
+            "docker compose run --rm --no-deps frontend nginx -t",
+            source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
