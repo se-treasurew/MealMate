@@ -99,9 +99,6 @@
                   {{ tag.name }}
                 </van-tag>
               </div>
-              <p class="dish-card-desc" v-if="dish.description">
-                {{ dish.description.substring(0, 40) }}{{ dish.description.length > 40 ? '...' : '' }}
-              </p>
             </div>
           </button>
           <van-button
@@ -335,17 +332,6 @@ onMounted(async () => {
   gap: 6px;
   margin-bottom: 8px;
   flex-wrap: wrap;
-}
-
-.dish-card-desc {
-  font-size: 13px;
-  color: #8c8c8c;
-  line-height: 1.5;
-  margin: auto 0 0;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
 }
 
 @media (max-width: 420px) {
