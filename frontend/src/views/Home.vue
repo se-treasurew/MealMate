@@ -50,71 +50,92 @@
 
       <!-- 分类筛选 -->
       <div class="category-tabs">
-        <van-tabs v-model:active="activeCategory" @change="onCategoryChange">
-          <van-tab title="全部" :name="0" />
+        <van-tabs
+          v-model:active="activeCategory"
+          swipeable
+          animated
+          sticky
+          :offset-top="46"
+          @change="onCategoryChange"
+        >
           <van-tab
-            v-for="cat in categories"
-            :key="cat.id"
-            :title="cat.name"
-            :name="cat.id"
-          />
+            v-for="tab in categoryTabs"
+            :key="tab.id"
+            :title="tab.name"
+            :name="tab.id"
+          >
+            <div class="dish-page">
+              <van-loading
+                v-if="dishPages[tab.id].loading"
+                type="spinner"
+                class="page-loading"
+              />
+
+              <template v-else>
+                <div class="dish-list" v-if="dishPages[tab.id].dishes.length > 0">
+                  <article
+                    v-for="dish in dishPages[tab.id].dishes"
+                    :key="dish.id"
+                    class="dish-card"
+                  >
+                    <button
+                      type="button"
+                      class="dish-card-main"
+                      :aria-label="`查看菜品：${dish.name}`"
+                      @click="goDishDetail(dish.id)"
+                    >
+                      <div class="dish-card-image">
+                        <img
+                          v-if="getCoverImage(dish) && !isImageBroken(dish)"
+                          :src="getCoverImage(dish)"
+                          :alt="dish.name"
+                          @error="markImageBroken(dish.id)"
+                        />
+                        <div v-else class="dish-card-placeholder">
+                          <van-icon name="photo-o" size="32" />
+                        </div>
+                      </div>
+                      <div class="dish-card-content">
+                        <h3 class="dish-card-title">{{ dish.name }}</h3>
+                        <div class="dish-card-tags">
+                          <van-tag plain v-if="getCategoryName(dish.category_id)">
+                            {{ getCategoryName(dish.category_id) }}
+                          </van-tag>
+                          <van-tag
+                            v-for="tag in dish.tags"
+                            :key="tag.id"
+                            type="warning"
+                          >
+                            {{ tag.name }}
+                          </van-tag>
+                        </div>
+                      </div>
+                    </button>
+                    <van-button
+                      round
+                      size="small"
+                      icon="plus"
+                      type="primary"
+                      class="quick-add-btn"
+                      aria-label="加入购物车"
+                      @click="quickAddToCart(dish)"
+                    />
+                  </article>
+                </div>
+                <van-empty
+                  v-else
+                  :description="dishPages[tab.id].error ? '加载失败' : '暂无菜品'"
+                  image="search"
+                >
+                  <van-button round type="primary" @click="loadDishes(tab.id, true)">
+                    刷新
+                  </van-button>
+                </van-empty>
+              </template>
+            </div>
+          </van-tab>
         </van-tabs>
       </div>
-
-      <!-- 菜品列表 -->
-      <div class="dish-list" v-if="dishes.length > 0">
-        <article
-          v-for="dish in dishes"
-          :key="dish.id"
-          class="dish-card"
-        >
-          <button
-            type="button"
-            class="dish-card-main"
-            :aria-label="`查看菜品：${dish.name}`"
-            @click="goDishDetail(dish.id)"
-          >
-            <div class="dish-card-image">
-              <img
-                v-if="getCoverImage(dish) && !isImageBroken(dish)"
-                :src="getCoverImage(dish)"
-                :alt="dish.name"
-                @error="markImageBroken(dish.id)"
-              />
-              <div v-else class="dish-card-placeholder">
-                <van-icon name="photo-o" size="32" />
-              </div>
-            </div>
-            <div class="dish-card-content">
-              <h3 class="dish-card-title">{{ dish.name }}</h3>
-              <div class="dish-card-tags">
-                <van-tag plain v-if="getCategoryName(dish.category_id)">
-                  {{ getCategoryName(dish.category_id) }}
-                </van-tag>
-                <van-tag
-                  v-for="tag in dish.tags"
-                  :key="tag.id"
-                  type="warning"
-                >
-                  {{ tag.name }}
-                </van-tag>
-              </div>
-            </div>
-          </button>
-          <van-button
-            round
-            size="small"
-            icon="plus"
-            type="primary"
-            class="quick-add-btn"
-            aria-label="加入购物车"
-            @click="quickAddToCart(dish)"
-          />
-        </article>
-      </div>
-      <van-empty v-else description="暂无菜品" image="search">
-        <van-button round type="primary" @click="loadDishes">刷新</van-button>
-      </van-empty>
     </div>
 
     <!-- 悬浮购物车 -->
@@ -123,7 +144,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showSuccessToast } from 'vant'
 import { useUserStore } from '@/stores/user'
@@ -137,35 +158,100 @@ const cartStore = useCartStore()
 const searchKeyword = ref('')
 const activeCategory = ref(0)
 const categories = ref<Category[]>([])
-const dishes = ref<Dish[]>([])
 const brokenImageIds = ref(new Set<number>())
+
+interface DishPage {
+  dishes: Dish[]
+  loading: boolean
+  error: boolean
+  loadedKeyword: string | null
+  requestId: number
+}
+
+const createDishPage = (): DishPage => ({
+  dishes: [],
+  loading: false,
+  error: false,
+  loadedKeyword: null,
+  requestId: 0,
+})
+
+const dishPages = reactive<Record<number, DishPage>>({
+  0: createDishPage(),
+})
+
+const categoryTabs = computed(() => [
+  { id: 0, name: '全部' },
+  ...categories.value,
+])
+
+const ensureDishPage = (categoryId: number) => {
+  if (!dishPages[categoryId]) {
+    dishPages[categoryId] = createDishPage()
+  }
+  return dishPages[categoryId]
+}
 
 // 加载分类
 const loadCategories = async () => {
   try {
     const { data } = await getCategories()
     categories.value = data
+    data.forEach((category) => ensureDishPage(category.id))
   } catch (e) {
     showToast('加载分类失败')
   }
 }
 
 // 加载菜品
-const loadDishes = async () => {
+const loadDishes = async (categoryId = activeCategory.value, force = false) => {
+  const page = ensureDishPage(categoryId)
+  const keyword = searchKeyword.value.trim()
+  if (!force && page.loadedKeyword === keyword) return
+
+  const requestId = ++page.requestId
+  if (page.loadedKeyword !== keyword) {
+    page.dishes = []
+  }
+  page.loading = true
+  page.error = false
+
   try {
     const { data } = await getDishes({
-      search: searchKeyword.value || undefined,
-      category_id: activeCategory.value || undefined,
+      search: keyword || undefined,
+      category_id: categoryId || undefined,
     })
-    dishes.value = data
-    brokenImageIds.value = new Set()
+    if (page.requestId === requestId) {
+      page.dishes = data
+      page.loadedKeyword = keyword
+    }
   } catch (e) {
-    showToast('加载菜品失败')
+    if (page.requestId === requestId) {
+      page.error = true
+      showToast('加载菜品失败')
+    }
+  } finally {
+    if (page.requestId === requestId) {
+      page.loading = false
+    }
   }
 }
 
-const onSearch = () => loadDishes()
-const onCategoryChange = () => loadDishes()
+const onSearch = () => {
+  Object.values(dishPages).forEach((page) => {
+    page.requestId += 1
+    page.dishes = []
+    page.loading = false
+    page.error = false
+    page.loadedKeyword = null
+  })
+  brokenImageIds.value = new Set()
+  void loadDishes(activeCategory.value, true)
+}
+
+const onCategoryChange = (name: string | number) => {
+  void loadDishes(Number(name))
+}
 
 // 获取封面图
 const getCoverImage = (dish: Dish) => {
@@ -221,16 +307,23 @@ const quickAddToCart = (dish: Dish) => {
 
 onMounted(async () => {
   await loadCategories()
-  await loadDishes()
+  await loadDishes(0)
 })
 </script>
 
 <style scoped>
 .category-tabs {
   background: #fff;
-  position: sticky;
-  top: 46px;
-  z-index: 10;
+}
+
+.dish-page {
+  min-height: 220px;
+}
+
+.page-loading {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
 }
 
 .dish-card {
