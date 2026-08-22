@@ -7,6 +7,7 @@ export interface HorizontalSwipeOptions {
   canPrevious?: () => boolean
   threshold?: number
   directionRatio?: number
+  excludeSelector?: string
 }
 
 export interface HorizontalSwipeHandlers {
@@ -26,6 +27,7 @@ export function useHorizontalSwipe({
   canPrevious = () => true,
   threshold = 36,
   directionRatio = 1.25,
+  excludeSelector,
 }: HorizontalSwipeOptions): HorizontalSwipeHandlers {
   let startX = 0
   let startY = 0
@@ -59,6 +61,37 @@ export function useHorizontalSwipe({
     return undefined
   }
 
+  const isTouchExcluded = (event: TouchEvent, touch: Touch) => {
+    if (!excludeSelector) return false
+
+    if (
+      typeof Element !== 'undefined' &&
+      event.target instanceof Element &&
+      event.target.closest(excludeSelector)
+    ) {
+      return true
+    }
+
+    if (typeof document === 'undefined') return false
+
+    const excludedElements = document.querySelectorAll<HTMLElement>(excludeSelector)
+    for (let index = 0; index < excludedElements.length; index += 1) {
+      const rect = excludedElements[index].getBoundingClientRect()
+      if (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        touch.clientX >= rect.left &&
+        touch.clientX <= rect.right &&
+        touch.clientY >= rect.top &&
+        touch.clientY <= rect.bottom
+      ) {
+        return true
+      }
+    }
+
+    return false
+  }
+
   const scheduleClickSuppressionReset = () => {
     if (typeof window === 'undefined') return
     if (suppressClickTimer !== undefined) {
@@ -86,6 +119,11 @@ export function useHorizontalSwipe({
     }
 
     const touch = event.touches[0]
+    if (isTouchExcluded(event, touch)) {
+      resetGesture()
+      return
+    }
+
     startX = touch.clientX
     startY = touch.clientY
     tracking = true
