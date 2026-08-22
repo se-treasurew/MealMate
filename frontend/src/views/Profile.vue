@@ -79,6 +79,15 @@
         <van-cell title="发送测试推送" is-link @click="sendTestPush" />
       </van-cell-group>
 
+      <van-cell-group inset title="应用更新" style="margin-top: 16px">
+        <van-cell
+          title="检查更新"
+          :value="checking ? '检查中…' : '手动检查'"
+          :is-link="!checking"
+          @click="onCheckUpdate"
+        />
+      </van-cell-group>
+
       <div style="margin: 16px">
         <van-button round block type="danger" @click="onLogout">退出登录</van-button>
       </div>
@@ -208,6 +217,7 @@ import { showConfirmDialog, showSuccessToast, showToast } from 'vant'
 import type { UploaderFileListItem } from 'vant'
 import { useUserStore } from '@/stores/user'
 import { usePush } from '@/composables/usePush'
+import { useAppUpdate } from '@/composables/useAppUpdate'
 import { imageUrl } from '@/api/dish'
 import { updateProfile, uploadAvatar } from '@/api/auth'
 import { changePassword as changePasswordApi } from '@/api/auth'
@@ -216,6 +226,7 @@ import { PRESET_AVATARS } from '@/utils/avatars'
 const userStore = useUserStore()
 const defaultAvatar = 'https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg'
 const { subscribed, pushEnabled, initPush, enablePush, disablePush, sendTestPush } = usePush()
+const { checking, checkForUpdate } = useAppUpdate()
 
 // 编辑资料
 const showEdit = ref(false)
@@ -315,6 +326,22 @@ const onSwitchMode = () => {
 const onTogglePush = async (val: boolean) => {
   if (val) await enablePush()
   else await disablePush()
+}
+
+const onCheckUpdate = async () => {
+  if (checking.value) return
+  const result = await checkForUpdate()
+  if (result === 'current') {
+    showSuccessToast('当前已是最新版本')
+  } else if (result === 'available') {
+    showSuccessToast('发现新版本，请在页面提示中更新')
+  } else if (result === 'pending') {
+    showToast('新版本正在准备，请稍后查看页面提示')
+  } else if (result === 'unsupported') {
+    showToast('当前浏览器不支持自动更新')
+  } else {
+    showToast('检查更新失败，请稍后重试')
+  }
 }
 
 // 退出登录

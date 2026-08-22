@@ -6,6 +6,14 @@ import { ExpirationPlugin } from 'workbox-expiration'
 
 declare let self: ServiceWorkerGlobalScope
 
+// 新版本安装完成后立即激活；由前端提示用户确认刷新当前页面。
+self.skipWaiting()
+self.addEventListener('message', (event: ExtendableMessageEvent) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    event.waitUntil(self.skipWaiting())
+  }
+})
+
 // 预缓存（vite-plugin-pwa 注入清单）
 precacheAndRoute(self.__WB_MANIFEST)
 

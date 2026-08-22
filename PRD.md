@@ -101,6 +101,7 @@ pending -> accepted -> cooking -> done
 
 - Manifest 提供应用名称、主题色、192/512 图标、`standalone` 展示模式。
 - Service Worker 使用 `injectManifest`，预缓存前端资源；菜单 API 使用 NetworkFirst，上传图片使用 CacheFirst。
+- 前端由 `virtual:pwa-register` 统一注册 Service Worker；新版本在后台安装后显示更新提示，由用户确认刷新。入口文件、`sw.js`、Manifest 和图标禁止长期缓存，带内容哈希的 `/assets/` 文件使用长期缓存。
 - Web Push 为可选能力。未同时配置 VAPID 公私钥时，系统明确显示未启用并软降级，不阻断核心点餐流程。
 - `VAPID_PRIVATE_KEY` 推荐为 PKCS8 `BEGIN PRIVATE KEY` PEM 文件路径。PEM 不得进入 Git；更换 VAPID 密钥后客户端必须重新订阅。
 - iOS 推送要求 iOS 16.4+ 且先把应用加入主屏幕。

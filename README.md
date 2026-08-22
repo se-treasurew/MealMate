@@ -103,6 +103,14 @@ PowerShell 使用 `$env:JWT_SECRET='...'` 和 `$env:ADMIN_INITIAL_PASSWORD='...'
 
 SQLite 数据保存在 `backend/data/`，上传内容保存在 `backend/uploads/`。两者均为运行数据，不进入发布树，部署者必须同时备份。启用 VAPID 时，还需以环境变量和只读卷向 backend 容器提供公钥与 PKCS8 私钥文件；更换 VAPID 密钥会使已有浏览器订阅失效。
 
+前端发布新版本时，只需重新构建 frontend 服务：
+
+```bash
+docker compose up -d --build --no-deps frontend
+```
+
+PWA 会在后台检测并安装新版本，页面随后显示“发现新版本”。用户点击“立即更新”后才刷新页面；点击“稍后”不会丢失当前订单、购物车或登录状态，也不需要清除浏览器缓存。个人中心的“检查更新”可主动触发检测。反向代理必须沿用 `frontend/nginx.conf` 的缓存策略：`index.html`、`sw.js`、清单和图标禁止长期缓存，带内容哈希的 `/assets/` 文件才使用长期缓存。
+
 ## 权限与关键业务规则
 
 | 身份 | 能力 |
