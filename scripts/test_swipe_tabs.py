@@ -21,6 +21,12 @@ class SwipeTabSourceTests(unittest.TestCase):
         self.assertIn("dishPages", source)
         self.assertIn("requestId", source)
 
+    def test_home_dish_panel_height_follows_content(self):
+        source = self.read_view("Home.vue")
+
+        self.assertIn('class="dish-page"', source)
+        self.assertNotIn("min-height: 220px", source)
+
     def test_orders_use_swipeable_panels_for_every_status(self):
         source = self.read_view("Orders.vue")
 

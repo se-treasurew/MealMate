@@ -316,10 +316,6 @@ onMounted(async () => {
   background: #fff;
 }
 
-.dish-page {
-  min-height: 220px;
-}
-
 .page-loading {
   display: flex;
   justify-content: center;
