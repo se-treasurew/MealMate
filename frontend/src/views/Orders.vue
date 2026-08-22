@@ -2,11 +2,18 @@
   <div class="orders">
     <van-nav-bar title="我的订单" fixed />
 
-    <div class="content" style="padding-top: 46px">
+    <div
+      class="content swipe-surface"
+      style="padding-top: 46px"
+      @touchstart="onTouchStart"
+      @touchmove="onTouchMove"
+      @touchend="onTouchEnd"
+      @touchcancel="onTouchCancel"
+      @click.capture="onClickCapture"
+    >
       <!-- 状态筛选 -->
       <van-tabs
         v-model:active="statusFilter"
-        swipeable
         animated
         @change="onStatusChange"
       >
@@ -93,6 +100,7 @@ import {
   type Order,
 } from '@/api/order'
 import { useUserStore } from '@/stores/user'
+import { useHorizontalSwipe } from '@/composables/useHorizontalSwipe'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -179,8 +187,33 @@ const itemsSummary = (order: Order) => {
 }
 
 const onStatusChange = (name: string | number) => {
-  void loadOrders(String(name) as OrderStatusFilter)
+  const filter = String(name) as OrderStatusFilter
+  statusFilter.value = filter
+  void loadOrders(filter)
 }
+
+const statusIndex = () =>
+  ORDER_TABS.findIndex((tab) => tab.name === statusFilter.value)
+
+const switchStatus = (step: -1 | 1) => {
+  const index = statusIndex()
+  const target = ORDER_TABS[index + step]
+  if (!target) return
+
+  statusFilter.value = target.name
+  void loadOrders(target.name)
+}
+
+const { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, onClickCapture } =
+  useHorizontalSwipe({
+    onNext: () => switchStatus(1),
+    onPrevious: () => switchStatus(-1),
+    canNext: () => {
+      const index = statusIndex()
+      return index >= 0 && index < ORDER_TABS.length - 1
+    },
+    canPrevious: () => statusIndex() > 0,
+  })
 
 const onRefresh = async (filter: OrderStatusFilter) => {
   const succeeded = await loadOrders(filter, true)
@@ -224,6 +257,11 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.swipe-surface {
+  min-height: calc(100svh - 50px);
+  touch-action: pan-y;
+}
+
 .loading {
   display: flex;
   justify-content: center;

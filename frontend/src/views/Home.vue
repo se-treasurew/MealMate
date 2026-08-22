@@ -39,7 +39,15 @@
       </template>
     </van-nav-bar>
 
-    <div class="content" style="padding-top: 46px">
+    <div
+      class="content swipe-surface"
+      style="padding-top: 46px"
+      @touchstart="onTouchStart"
+      @touchmove="onTouchMove"
+      @touchend="onTouchEnd"
+      @touchcancel="onTouchCancel"
+      @click.capture="onClickCapture"
+    >
       <!-- 搜索栏 -->
       <van-search
         v-model="searchKeyword"
@@ -52,7 +60,6 @@
       <div class="category-tabs">
         <van-tabs
           v-model:active="activeCategory"
-          swipeable
           animated
           sticky
           :offset-top="46"
@@ -151,6 +158,7 @@ import { useUserStore } from '@/stores/user'
 import { useCartStore } from '@/stores/cart'
 import { getCategories, getDishes, imageUrl, type Category, type Dish } from '@/api/dish'
 import FloatingCart from '@/components/FloatingCart.vue'
+import { useHorizontalSwipe } from '@/composables/useHorizontalSwipe'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -250,8 +258,33 @@ const onSearch = () => {
 }
 
 const onCategoryChange = (name: string | number) => {
-  void loadDishes(Number(name))
+  const categoryId = Number(name)
+  activeCategory.value = categoryId
+  void loadDishes(categoryId)
 }
+
+const categoryIndex = () =>
+  categoryTabs.value.findIndex((category) => category.id === activeCategory.value)
+
+const switchCategory = (step: -1 | 1) => {
+  const index = categoryIndex()
+  const target = categoryTabs.value[index + step]
+  if (!target) return
+
+  activeCategory.value = target.id
+  void loadDishes(target.id)
+}
+
+const { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, onClickCapture } =
+  useHorizontalSwipe({
+    onNext: () => switchCategory(1),
+    onPrevious: () => switchCategory(-1),
+    canNext: () => {
+      const index = categoryIndex()
+      return index >= 0 && index < categoryTabs.value.length - 1
+    },
+    canPrevious: () => categoryIndex() > 0,
+  })
 
 // 获取封面图
 const getCoverImage = (dish: Dish) => {
@@ -312,6 +345,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.swipe-surface {
+  min-height: calc(100svh - 50px);
+  touch-action: pan-y;
+}
+
 .category-tabs {
   background: #fff;
 }
