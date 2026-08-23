@@ -32,7 +32,7 @@ async def health():
 
 
 # 注册路由
-from app.routers import auth, categories, dishes, tags, orders, push, config, users
+from app.routers import auth, categories, dishes, tags, orders, push, config, users, reviews
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
@@ -42,3 +42,4 @@ app.include_router(tags.router, prefix="/api/tags", tags=["tags"])
 app.include_router(orders.router, prefix="/api/orders", tags=["orders"])
 app.include_router(push.router, prefix="/api/push", tags=["push"])
 app.include_router(config.router, prefix="/api/config", tags=["config"])
+app.include_router(reviews.router, prefix="/api", tags=["reviews"])

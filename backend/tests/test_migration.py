@@ -102,12 +102,18 @@ class LegacySqliteMigrationTests(unittest.TestCase):
                 avatar_url = connection.execute(
                     "SELECT avatar_url FROM user WHERE username = 'legacy'"
                 ).fetchone()[0]
+                review_table = connection.execute(
+                    "SELECT sql FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'dish_review'"
+                ).fetchone()
 
             self.assertIn("token_version", columns)
             self.assertEqual(columns["token_version"][2].upper(), "INTEGER")
             self.assertEqual(columns["token_version"][3], 1)
             self.assertEqual(columns["token_version"][4], "0")
             self.assertEqual(avatar_url, "/avatars/cat.png")
+            self.assertIsNotNone(review_table)
+            self.assertIn("uq_review_order_dish", review_table[0])
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_current_user_optional
 from app.models import (
-    User, Dish, DishCategory, DishImage, DishLink, DishTag, Tag,
+    User, Dish, DishCategory, DishImage, DishLink, DishTag, Tag, DishReview,
 )
 from app.schemas.dish import (
     DishCreate, DishUpdate, DishResponse, DishLinkBase,
@@ -30,6 +30,42 @@ def validate_upload_batch(files: list[UploadFile]) -> None:
 def check_feeder(user: User):
     if not (user.is_feeder or user.is_admin):
         raise HTTPException(status_code=403, detail="无权限")
+
+
+async def load_rating_map(
+    db: AsyncSession, dish_ids: set[int]
+) -> dict[int, tuple[float | None, int]]:
+    """批量聚合菜品评分：{dish_id: (平均分, 评价数)}，无评价的菜品不在结果中。"""
+    if not dish_ids:
+        return {}
+    result = await db.execute(
+        select(
+            DishReview.dish_id,
+            func.avg(DishReview.rating),
+            func.count(DishReview.id),
+        )
+        .where(DishReview.dish_id.in_(dish_ids))
+        .group_by(DishReview.dish_id)
+    )
+    return {
+        dish_id: (round(float(avg), 1), int(count))
+        for dish_id, avg, count in result.all()
+    }
+
+
+def apply_ratings(
+    dishes: list[Dish],
+    rating_map: dict[int, tuple[float | None, int]],
+) -> list[DishResponse]:
+    """把聚合评分附加到菜品响应上。"""
+    responses = []
+    for d in dishes:
+        resp = DishResponse.model_validate(d)
+        avg, count = rating_map.get(d.id, (None, 0))
+        resp.avg_rating = avg
+        resp.rating_count = count
+        responses.append(resp)
+    return responses
 
 
 async def sync_links(db: AsyncSession, dish: Dish, links: list[DishLinkBase]):
@@ -103,7 +139,9 @@ async def list_dishes(
 
     stmt = stmt.order_by(Dish.created_at.desc())
     result = await db.execute(stmt)
-    return result.scalars().unique().all()
+    dishes = result.scalars().unique().all()
+    rating_map = await load_rating_map(db, {d.id for d in dishes})
+    return apply_ratings(dishes, rating_map)
 
 
 @router.get("/{dish_id}", response_model=DishResponse)
@@ -133,7 +171,8 @@ async def get_dish(
     ):
         raise HTTPException(status_code=404, detail="菜品不存在")
 
-    return dish
+    rating_map = await load_rating_map(db, {dish.id})
+    return apply_ratings([dish], rating_map)[0]
 
 
 @router.post("", response_model=DishResponse, status_code=201)

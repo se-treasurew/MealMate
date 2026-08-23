@@ -405,6 +405,7 @@ async def main():
         # ========== 8. 取消订单 ==========
         print("\n[8] 取消订单")
         # 新建一个待处理订单再取消
+        cancel_id = None
         r = await client.post("/api/orders", headers=headers, json={
             "meal_date": tomorrow, "meal_type": "晚餐",
             "items": [{"dish_id": dish_id, "quantity": 1}],
@@ -413,6 +414,99 @@ async def main():
             cancel_id = r.json()["id"]
             r = await client.delete(f"/api/orders/{cancel_id}", headers=headers)
             record("取消待处理订单", r.status_code == 204)
+
+        # ========== 8.5 菜品评价 ==========
+        print("\n[8.5] 菜品评价")
+        if order_id:
+            # 已取消订单不可评价
+            if cancel_id:
+                r = await client.post(f"/api/orders/{cancel_id}/reviews", headers=headers, json={
+                    "items": [{"dish_id": dish_id, "rating": 5}],
+                })
+                record("已取消订单不可评价", r.status_code == 400)
+            # 当前 E2E 账号就是订单本人；非本人权限由后端单元测试覆盖。
+            print("  - 非本人评价被拒：当前 E2E 账号为订单本人，跳过")
+
+            # 评分越界被拒
+            r = await client.post(f"/api/orders/{order_id}/reviews", headers=headers, json={
+                "items": [{"dish_id": dish_id, "rating": 6}],
+            })
+            record("评分超出范围被拒", r.status_code == 422)
+
+            # 不属于订单的菜品被拒
+            r = await client.post(f"/api/orders/{order_id}/reviews", headers=headers, json={
+                "items": [{"dish_id": 999999, "rating": 5}],
+            })
+            record("评价非订单菜品被拒", r.status_code == 400)
+
+            # 正常提交评价
+            r = await client.post(f"/api/orders/{order_id}/reviews", headers=headers, json={
+                "items": [{"dish_id": dish_id, "rating": 5, "comment": "非常好吃"}],
+            })
+            submit_ok = (
+                r.status_code == 200
+                and not r.json().get("items", [{}])[0].get("updated", True)
+            )
+            record(
+                "提交评价成功",
+                submit_ok,
+                f"status={r.status_code} body={r.text[:200]}" if not submit_ok else "",
+            )
+
+            # 查询菜品评分聚合
+            r = await client.get(f"/api/dishes/{dish_id}")
+            rating_ok = (
+                r.status_code == 200
+                and r.json().get("rating_count") == 1
+                and abs((r.json().get("avg_rating") or 0) - 5.0) < 0.01
+            )
+            record("菜品详情含评分聚合", rating_ok,
+                   f"avg={r.json().get('avg_rating')} count={r.json().get('rating_count')}")
+
+            # 游客可读评价列表
+            r = await client.get(f"/api/dishes/{dish_id}/reviews")
+            list_ok = (
+                r.status_code == 200
+                and len(r.json()) == 1
+                and r.json()[0]["comment"] == "非常好吃"
+            )
+            record("游客可读菜品评价列表", list_ok)
+
+            # 修改评价（upsert）
+            r = await client.post(f"/api/orders/{order_id}/reviews", headers=headers, json={
+                "items": [{"dish_id": dish_id, "rating": 3, "comment": "改主意了"}],
+            })
+            update_ok = (
+                r.status_code == 200
+                and r.json()["items"][0]["updated"] is True
+                and r.json()["items"][0]["rating"] == 3
+            )
+            record("重复提交更新评价", update_ok)
+
+            # 均分随更新变化
+            r = await client.get(f"/api/dishes/{dish_id}")
+            record("均分随评价更新",
+                   r.status_code == 200 and abs((r.json().get("avg_rating") or 0) - 3.0) < 0.01)
+
+            # 订单评价回显
+            r = await client.get(f"/api/orders/{order_id}/reviews", headers=headers)
+            record("订单评价回显", r.status_code == 200 and len(r.json()) == 1)
+
+            # 饲养员删除评价（当前用户是管理员，先验证普通用户被拒不可行，直接删除）
+            review_id = (await client.get(
+                f"/api/dishes/{dish_id}/reviews"
+            )).json()[0]["id"]
+            r_del = await client.delete(f"/api/reviews/{review_id}", headers=headers)
+            record("饲养员/店长删除评价", r_del.status_code == 204)
+
+            # 删除后评分清零
+            r = await client.get(f"/api/dishes/{dish_id}")
+            cleared_ok = (
+                r.status_code == 200
+                and r.json().get("rating_count") == 0
+                and r.json().get("avg_rating") is None
+            )
+            record("删除后评分清空显示暂无评分", cleared_ok)
 
         # ========== 9. 推送 ==========
         print("\n[9] 推送通知")

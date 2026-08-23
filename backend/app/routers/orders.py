@@ -6,10 +6,13 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models import (
-    User, Order, OrderItem, Dish,
+    User, Order, OrderItem, Dish, DishReview,
 )
 from app.schemas.order import (
     OrderCreate, OrderUpdate, OrderResponse, OrderItemResponse,
+)
+from app.schemas.review import (
+    ReviewCreate, ReviewResponse, ReviewSubmitResponse, ReviewItemStatus,
 )
 from app.routers.push import notify_feeders, notify_user
 
@@ -315,3 +318,115 @@ async def cancel_order(
         await db.rollback()
         raise HTTPException(status_code=400, detail="订单状态已变化，请刷新后重试")
     await db.commit()
+
+
+@router.post("/{order_id}/reviews", response_model=ReviewSubmitResponse)
+async def submit_order_reviews(
+    order_id: int,
+    payload: ReviewCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """订单完成后，下单人对订单内菜品逐个评价（重复提交视为修改）"""
+    result = await db.execute(
+        select(Order)
+        .options(selectinload(Order.items))
+        .where(Order.id == order_id)
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    if order.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="只能评价自己的订单")
+    if order.status != "done":
+        raise HTTPException(status_code=400, detail="仅已完成订单可评价")
+
+    # 校验：去重、菜品必须属于该订单
+    seen: set[int] = set()
+    order_dish_ids = {item.dish_id for item in order.items}
+    for item in payload.items:
+        if item.dish_id in seen:
+            raise HTTPException(status_code=400, detail=f"菜品#{item.dish_id} 重复评价")
+        if item.dish_id not in order_dish_ids:
+            raise HTTPException(status_code=400, detail="评价的菜品不在该订单中")
+        seen.add(item.dish_id)
+
+    results: list[ReviewItemStatus] = []
+    existing = {
+        r.dish_id: r
+        for r in (
+            await db.execute(
+                select(DishReview).where(
+                    DishReview.order_id == order_id,
+                    DishReview.user_id == current_user.id,
+                )
+            )
+        ).scalars().all()
+    }
+
+    for item in payload.items:
+        review = existing.get(item.dish_id)
+        if review:
+            review.rating = item.rating
+            review.comment = item.comment
+            updated = True
+        else:
+            review = DishReview(
+                dish_id=item.dish_id,
+                order_id=order_id,
+                user_id=current_user.id,
+                rating=item.rating,
+                comment=item.comment,
+            )
+            db.add(review)
+            await db.flush()
+            updated = False
+        results.append(ReviewItemStatus(
+            dish_id=item.dish_id,
+            review_id=review.id,
+            rating=review.rating,
+            comment=review.comment,
+            updated=updated,
+        ))
+
+    await db.commit()
+    return ReviewSubmitResponse(order_id=order_id, items=results)
+
+
+@router.get("/{order_id}/reviews", response_model=list[ReviewResponse])
+async def list_order_reviews(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取本人对某订单已提交的评价（用于回显修改）"""
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    if order.user_id != current_user.id and not (
+        current_user.is_feeder or current_user.is_admin
+    ):
+        raise HTTPException(status_code=403, detail="无权查看此订单的评价")
+
+    stmt = (
+        select(DishReview)
+        .options(selectinload(DishReview.user))
+        .where(DishReview.order_id == order_id)
+        .order_by(DishReview.created_at.desc())
+    )
+    reviews = (await db.execute(stmt)).scalars().all()
+    return [
+        ReviewResponse(
+            id=r.id,
+            dish_id=r.dish_id,
+            order_id=r.order_id,
+            user_id=r.user_id,
+            user_nickname=r.user.nickname if r.user else None,
+            rating=r.rating,
+            comment=r.comment,
+            created_at=r.created_at,
+            updated_at=r.updated_at,
+        )
+        for r in reviews
+    ]

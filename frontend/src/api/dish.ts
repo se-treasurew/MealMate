@@ -37,6 +37,9 @@ export interface Dish {
   images: DishImage[]
   links: DishLink[]
   tags: Tag[]
+  // 聚合评分：无评分时 avg_rating 为 null
+  avg_rating?: number | null
+  rating_count?: number
 }
 
 export interface DishCreatePayload {

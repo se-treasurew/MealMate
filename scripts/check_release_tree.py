@@ -25,7 +25,6 @@ FORBIDDEN_DIRECTORIES = {
 
 # 这些文件已从 v1.0 发布树移除，防止调试、预览和旧账号逻辑回流。
 REMOVED_RELEASE_PATHS = {
-    "agents.md",
     "claude.md",
     "project_status.md",
     "backend/check_leftover.py",

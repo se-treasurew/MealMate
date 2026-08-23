@@ -85,6 +85,40 @@
           />
         </van-cell-group>
 
+        <!-- 用户评价 -->
+        <van-cell-group inset title="用户评价">
+          <div v-if="reviews.length === 0" class="review-empty">暂无评价</div>
+          <template v-else>
+            <div class="review-summary">
+              <van-rate
+                :model-value="Math.round(dish?.avg_rating ?? 0)"
+                readonly
+                allow-half
+                size="14"
+                color="#FF6B35"
+                void-color="#ddd"
+              />
+              <span class="review-summary-score">{{ (dish?.avg_rating ?? 0).toFixed(1) }}分</span>
+              <span class="review-summary-count">{{ dish?.rating_count ?? 0 }}人评分</span>
+            </div>
+            <div v-for="review in reviews" :key="review.id" class="review-entry">
+              <div class="review-entry-head">
+                <span class="review-entry-name">{{ review.user_nickname || '匿名用户' }}</span>
+                <van-rate
+                  :model-value="review.rating"
+                  readonly
+                  size="12"
+                  color="#FF6B35"
+                  void-color="#ddd"
+                  :gutter="1"
+                />
+              </div>
+              <div v-if="review.comment" class="review-entry-comment">{{ review.comment }}</div>
+              <div class="review-entry-time">{{ formatReviewTime(review.created_at) }}</div>
+            </div>
+          </template>
+        </van-cell-group>
+
         <!-- 点餐备注 -->
         <van-cell-group inset title="点餐备注">
           <van-field
@@ -134,6 +168,7 @@ import {
 } from '@/api/dish'
 import { useCartStore } from '@/stores/cart'
 import { renderMarkdown } from '@/utils/markdown'
+import { getDishReviews, type Review } from '@/api/review'
 import FloatingCart from '@/components/FloatingCart.vue'
 
 const route = useRoute()
@@ -142,6 +177,7 @@ const cartStore = useCartStore()
 const loading = ref(true)
 const dish = ref<Dish | null>(null)
 const categories = ref<Category[]>([])
+const reviews = ref<Review[]>([])
 const quantity = ref(1)
 const itemNote = ref('')
 const swipeRef = ref<SwipeInstance>()
@@ -163,6 +199,21 @@ const loadDish = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const loadReviews = async () => {
+  const id = Number(route.params.id)
+  try {
+    const { data } = await getDishReviews(id)
+    reviews.value = data
+  } catch {
+    // 评价加载失败不阻断页面
+  }
+}
+
+const formatReviewTime = (t?: string) => {
+  if (!t) return ''
+  return new Date(t).toLocaleDateString('zh-CN')
 }
 
 const getCategoryName = (id: number) =>
@@ -219,6 +270,7 @@ onMounted(async () => {
   const { data } = await getCategories()
   categories.value = data
   await loadDish()
+  void loadReviews()
 })
 
 onUnmounted(() => {
@@ -325,6 +377,68 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* 用户评价 */
+.review-empty {
+  padding: 16px;
+  color: #bbb;
+  font-size: 13px;
+  text-align: center;
+}
+
+.review-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.review-summary-score {
+  font-size: 15px;
+  font-weight: 600;
+  color: #FF6B35;
+}
+
+.review-summary-count {
+  font-size: 12px;
+  color: #999;
+}
+
+.review-entry {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.review-entry:last-child {
+  border-bottom: none;
+}
+
+.review-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-entry-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.review-entry-comment {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #666;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.review-entry-time {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #bbb;
 }
 
 /* 固定底部操作栏 */

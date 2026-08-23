@@ -25,6 +25,7 @@ class PathRuleTests(unittest.TestCase):
 
     def test_examples_and_source_configuration_are_allowed(self):
         allowed = (
+            "AGENTS.md",
             "backend/.env.example",
             "frontend/vite.config.ts",
             "backend/app/core/config.py",

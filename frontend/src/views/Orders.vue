@@ -67,15 +67,26 @@
                       </div>
                     </template>
                     <template #footer>
-                      <van-button
-                        v-if="order.status === 'pending'"
-                        size="small"
-                        plain
-                        type="danger"
-                        @click.stop="onCancel(order)"
-                      >
-                        取消订单
-                      </van-button>
+                      <div class="order-footer">
+                        <van-button
+                          v-if="canReview(order)"
+                          size="small"
+                          plain
+                          type="primary"
+                          @click.stop="goDetail(order.id)"
+                        >
+                          去评价
+                        </van-button>
+                        <van-button
+                          v-if="order.status === 'pending'"
+                          size="small"
+                          plain
+                          type="danger"
+                          @click.stop="onCancel(order)"
+                        >
+                          取消订单
+                        </van-button>
+                      </div>
                     </template>
                   </van-card>
                 </div>
@@ -186,6 +197,10 @@ const itemsSummary = (order: Order) => {
   return order.items.map((i) => `${i.dish_name} x${i.quantity}`).join('，')
 }
 
+// 已完成且是本人订单时可评价（饲养员看全部订单时不显示评价入口）
+const canReview = (order: Order) =>
+  order.status === 'done' && order.user_id === userStore.user?.id
+
 const onStatusChange = (name: string | number) => {
   const filter = String(name) as OrderStatusFilter
   statusFilter.value = filter
@@ -276,6 +291,11 @@ onMounted(() => {
 }
 .order-card {
   margin-bottom: 8px;
+}
+.order-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 .order-title {
   display: flex;

@@ -25,6 +25,7 @@ class User(Base):
     # 关系
     orders = relationship("Order", back_populates="user")
     dishes_created = relationship("Dish", back_populates="creator")
+    reviews = relationship("DishReview", back_populates="user")
 
 
 class DishCategory(Base):
@@ -60,3 +61,4 @@ class Dish(Base):
     # tag_links 为关联表行（同步时增删）；tags 为直达 Tag 的只读关系（响应序列化用）
     tag_links = relationship("DishTag", back_populates="dish", cascade="all, delete-orphan")
     tags = relationship("Tag", secondary="dish_tag", viewonly=True)
+    reviews = relationship("DishReview", back_populates="dish", cascade="all, delete-orphan")

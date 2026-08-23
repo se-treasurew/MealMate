@@ -70,13 +70,54 @@
         <div v-if="order.status === 'pending' && order.user_id === userStore.user?.id" class="cancel-area">
           <van-button plain block type="danger" @click="onCancel">取消订单</van-button>
         </div>
+
+        <!-- 评价区块（订单本人，已完成订单） -->
+        <van-cell-group
+          inset
+          title="评价菜品"
+          v-if="canReview"
+        >
+          <div v-for="item in order.items" :key="item.id" class="review-item">
+            <div class="review-dish-name">{{ item.dish_name }}</div>
+            <div class="review-rate-row">
+              <van-rate
+                v-model="reviewForm[item.dish_id].rating"
+                size="20"
+                color="#FF6B35"
+                void-color="#ddd"
+              />
+              <span class="review-rating-text">{{ ratingText(reviewForm[item.dish_id].rating) }}</span>
+            </div>
+            <van-field
+              v-model="reviewForm[item.dish_id].comment"
+              placeholder="说说菜的味道、分量如何～（选填）"
+              type="textarea"
+              rows="2"
+              autosize
+              maxlength="500"
+              show-word-limit
+              class="review-comment-field"
+            />
+          </div>
+          <div class="review-submit-area">
+            <van-button
+              type="primary"
+              round
+              block
+              :loading="submittingReview"
+              @click="onSubmitReviews"
+            >
+              {{ hasExistingReviews ? '更新评价' : '提交评价' }}
+            </van-button>
+          </div>
+        </van-cell-group>
       </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
 import {
@@ -87,6 +128,7 @@ import {
   statusColor,
   type Order,
 } from '@/api/order'
+import { submitOrderReviews, getOrderReviews } from '@/api/review'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -96,11 +138,85 @@ const userStore = useUserStore()
 const loading = ref(true)
 const order = ref<Order | null>(null)
 
+// ===== 评价 =====
+interface ReviewFormEntry {
+  rating: number
+  comment: string
+}
+const reviewForm = reactive<Record<number, ReviewFormEntry>>({})
+const submittingReview = ref(false)
+const hasExistingReviews = ref(false)
+
+const canReview = computed(
+  () =>
+    order.value?.status === 'done' &&
+    order.value.user_id === userStore.user?.id
+)
+
+const ratingText = (rating: number): string => {
+  const map: Record<number, string> = {
+    1: '很差',
+    2: '较差',
+    3: '一般',
+    4: '满意',
+    5: '超赞',
+  }
+  return map[rating] || ''
+}
+
+const initReviewForm = () => {
+  if (!order.value) return
+  for (const item of order.value.items) {
+    if (!reviewForm[item.dish_id]) {
+      reviewForm[item.dish_id] = { rating: 5, comment: '' }
+    }
+  }
+}
+
+const loadExistingReviews = async () => {
+  if (!order.value) return
+  try {
+    const { data } = await getOrderReviews(order.value.id)
+    hasExistingReviews.value = data.length > 0
+    for (const review of data) {
+      reviewForm[review.dish_id] = {
+        rating: review.rating,
+        comment: review.comment ?? '',
+      }
+    }
+  } catch {
+    // 回显失败不阻断页面
+  }
+}
+
+const onSubmitReviews = async () => {
+  if (!order.value) return
+  const items = order.value.items.map((item) => ({
+    dish_id: item.dish_id,
+    rating: reviewForm[item.dish_id]?.rating ?? 5,
+    comment: reviewForm[item.dish_id]?.comment?.trim() || undefined,
+  }))
+  submittingReview.value = true
+  try {
+    await submitOrderReviews(order.value.id, { items })
+    showSuccessToast(hasExistingReviews.value ? '评价已更新' : '评价成功')
+    hasExistingReviews.value = true
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '提交评价失败')
+  } finally {
+    submittingReview.value = false
+  }
+}
+
 const loadOrder = async () => {
   const id = Number(route.params.id)
   try {
     const { data } = await getOrder(id)
     order.value = data
+    initReviewForm()
+    if (canReview.value) {
+      await loadExistingReviews()
+    }
   } catch (e: any) {
     showToast(e.response?.data?.detail || '加载失败')
   } finally {
@@ -186,5 +302,37 @@ onMounted(loadOrder)
 }
 .cancel-area {
   padding: 16px;
+}
+
+.review-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.review-dish-name {
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.review-rate-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-rating-text {
+  font-size: 12px;
+  color: #FF6B35;
+}
+
+.review-comment-field {
+  margin-top: 6px;
+  padding: 0;
+  background: #f7f8fa;
+  border-radius: 6px;
+}
+
+.review-submit-area {
+  padding: 12px 16px;
 }
 </style>

@@ -104,6 +104,22 @@
                       </div>
                       <div class="dish-card-content">
                         <h3 class="dish-card-title">{{ dish.name }}</h3>
+                        <div class="dish-card-rating">
+                          <template v-if="(dish.rating_count ?? 0) > 0">
+                            <van-rate
+                              :model-value="Math.round(dish.avg_rating ?? 0)"
+                              readonly
+                              allow-half
+                              size="12"
+                              color="#FF6B35"
+                              void-color="#ddd"
+                              :gutter="1"
+                            />
+                            <span class="rating-score">{{ (dish.avg_rating ?? 0).toFixed(1) }}</span>
+                            <span class="rating-count">{{ dish.rating_count }}人评分</span>
+                          </template>
+                          <span v-else class="rating-empty">暂无评分</span>
+                        </div>
                         <div class="dish-card-tags">
                           <van-tag plain v-if="getCategoryName(dish.category_id)">
                             {{ getCategoryName(dish.category_id) }}
@@ -446,6 +462,29 @@ onMounted(async () => {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
+}
+
+.dish-card-rating {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.rating-score {
+  font-size: 12px;
+  color: #FF6B35;
+  font-weight: 600;
+}
+
+.rating-count {
+  font-size: 11px;
+  color: #999;
+}
+
+.rating-empty {
+  font-size: 11px;
+  color: #bbb;
 }
 
 .quick-add-btn {
