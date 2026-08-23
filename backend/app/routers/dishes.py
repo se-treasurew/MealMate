@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, func
+from sqlalchemy import delete, select, or_, func
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_current_user_optional
 from app.models import (
     User, Dish, DishCategory, DishImage, DishLink, DishTag, Tag, DishReview,
+    DishFavorite,
 )
 from app.schemas.dish import (
     DishCreate, DishUpdate, DishResponse, DishLinkBase,
@@ -53,17 +55,37 @@ async def load_rating_map(
     }
 
 
+async def load_favorite_ids(
+    db: AsyncSession,
+    dish_ids: set[int],
+    current_user: User | None,
+) -> set[int]:
+    """批量获取当前账号在给定菜品中的收藏集合。"""
+    if not dish_ids or current_user is None:
+        return set()
+    result = await db.execute(
+        select(DishFavorite.dish_id).where(
+            DishFavorite.user_id == current_user.id,
+            DishFavorite.dish_id.in_(dish_ids),
+        )
+    )
+    return set(result.scalars().all())
+
+
 def apply_ratings(
     dishes: list[Dish],
     rating_map: dict[int, tuple[float | None, int]],
+    favorite_ids: set[int] | None = None,
 ) -> list[DishResponse]:
-    """把聚合评分附加到菜品响应上。"""
+    """把聚合评分和当前账号收藏状态附加到菜品响应上。"""
+    favorite_ids = favorite_ids or set()
     responses = []
     for d in dishes:
         resp = DishResponse.model_validate(d)
         avg, count = rating_map.get(d.id, (None, 0))
         resp.avg_rating = avg
         resp.rating_count = count
+        resp.is_favorite = d.id in favorite_ids
         responses.append(resp)
     return responses
 
@@ -137,11 +159,49 @@ async def list_dishes(
             )
         )
 
-    stmt = stmt.order_by(Dish.created_at.desc())
+    stmt = stmt.order_by(Dish.created_at.desc(), Dish.id.desc())
     result = await db.execute(stmt)
     dishes = result.scalars().unique().all()
-    rating_map = await load_rating_map(db, {d.id for d in dishes})
-    return apply_ratings(dishes, rating_map)
+    dish_ids = {d.id for d in dishes}
+    rating_map = await load_rating_map(db, dish_ids)
+    favorite_ids = await load_favorite_ids(db, dish_ids, current_user)
+    return apply_ratings(dishes, rating_map, favorite_ids)
+
+
+@router.get("/favorites", response_model=list[DishResponse])
+async def list_favorite_dishes(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    search: str | None = None,
+):
+    """获取当前账号收藏，最近收藏优先。"""
+    stmt = (
+        select(Dish)
+        .join(DishFavorite, DishFavorite.dish_id == Dish.id)
+        .options(
+            selectinload(Dish.images),
+            selectinload(Dish.links),
+            selectinload(Dish.tags),
+            selectinload(Dish.category),
+        )
+        .where(DishFavorite.user_id == current_user.id)
+        .order_by(DishFavorite.created_at.desc(), DishFavorite.id.desc())
+    )
+    if not (current_user.is_feeder or current_user.is_admin):
+        stmt = stmt.where(Dish.status == "active")
+    if search:
+        stmt = stmt.where(
+            or_(
+                Dish.name.ilike(f"%{search}%"),
+                Dish.tags.any(Tag.name.ilike(f"%{search}%")),
+            )
+        )
+
+    result = await db.execute(stmt)
+    dishes = result.scalars().unique().all()
+    dish_ids = {dish.id for dish in dishes}
+    rating_map = await load_rating_map(db, dish_ids)
+    return apply_ratings(dishes, rating_map, dish_ids)
 
 
 @router.get("/{dish_id}", response_model=DishResponse)
@@ -172,7 +232,46 @@ async def get_dish(
         raise HTTPException(status_code=404, detail="菜品不存在")
 
     rating_map = await load_rating_map(db, {dish.id})
-    return apply_ratings([dish], rating_map)[0]
+    favorite_ids = await load_favorite_ids(db, {dish.id}, current_user)
+    return apply_ratings([dish], rating_map, favorite_ids)[0]
+
+
+@router.put("/{dish_id}/favorite", status_code=204)
+async def favorite_dish(
+    dish_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """收藏一个上架菜品；重复收藏保持幂等。"""
+    result = await db.execute(
+        select(Dish.id).where(Dish.id == dish_id, Dish.status == "active")
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="菜品不存在或已下架")
+
+    statement = (
+        sqlite_insert(DishFavorite)
+        .values(user_id=current_user.id, dish_id=dish_id)
+        .on_conflict_do_nothing(index_elements=["user_id", "dish_id"])
+    )
+    await db.execute(statement)
+    await db.commit()
+
+
+@router.delete("/{dish_id}/favorite", status_code=204)
+async def unfavorite_dish(
+    dish_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """取消收藏；未收藏时同样成功。"""
+    await db.execute(
+        delete(DishFavorite).where(
+            DishFavorite.user_id == current_user.id,
+            DishFavorite.dish_id == dish_id,
+        )
+    )
+    await db.commit()
 
 
 @router.post("", response_model=DishResponse, status_code=201)

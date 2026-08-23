@@ -1,6 +1,12 @@
 <template>
   <div class="dish-detail">
-    <van-nav-bar title="菜品详情" fixed left-arrow @click-left="$router.back()" />
+    <van-nav-bar
+      title="菜品详情"
+      fixed
+      left-arrow
+      :left-text="returnOrderId ? '返回订单' : ''"
+      @click-left="goBack"
+    />
 
     <div class="content" style="padding-top: 46px; padding-bottom: 80px">
       <van-loading v-if="loading" type="spinner" class="loading" />
@@ -45,7 +51,18 @@
 
         <!-- 基本信息 -->
         <div class="info-section">
-          <h1 class="dish-name">{{ dish.name }}</h1>
+          <div class="dish-title-row">
+            <h1 class="dish-name">{{ dish.name }}</h1>
+            <van-button
+              round
+              size="small"
+              :icon="dish.is_favorite ? 'like' : 'like-o'"
+              :type="dish.is_favorite ? 'danger' : 'default'"
+              :loading="favoriteUpdating"
+              :aria-label="dish.is_favorite ? '取消收藏' : '收藏菜品'"
+              @click.stop="toggleFavorite"
+            />
+          </div>
           <div class="dish-tags">
             <van-tag plain type="primary">{{ getCategoryName(dish.category_id) }}</van-tag>
             <van-tag
@@ -155,14 +172,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { showToast, showSuccessToast } from 'vant'
 import type { SwipeInstance } from 'vant'
 import {
   getDish,
   getCategories,
+  favoriteDish,
   imageUrl,
+  unfavoriteDish,
   type Dish,
   type Category,
 } from '@/api/dish'
@@ -170,9 +189,12 @@ import { useCartStore } from '@/stores/cart'
 import { renderMarkdown } from '@/utils/markdown'
 import { getDishReviews, type Review } from '@/api/review'
 import FloatingCart from '@/components/FloatingCart.vue'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
+const router = useRouter()
 const cartStore = useCartStore()
+const userStore = useUserStore()
 
 const loading = ref(true)
 const dish = ref<Dish | null>(null)
@@ -183,6 +205,28 @@ const itemNote = ref('')
 const swipeRef = ref<SwipeInstance>()
 const currentImageIndex = ref(0)
 const isMobile = ref(window.innerWidth <= 768)
+const favoriteUpdating = ref(false)
+
+const returnOrderId = computed<number | null>(() => {
+  const value = route.query.from_order
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return null
+  const orderId = Number(value)
+  return Number.isSafeInteger(orderId) && orderId > 0 ? orderId : null
+})
+
+const goBack = () => {
+  if (!returnOrderId.value) {
+    router.back()
+    return
+  }
+
+  const orderPath = `/orders/${returnOrderId.value}`
+  if (window.history.state?.back === orderPath) {
+    router.back()
+    return
+  }
+  router.replace(`/orders/${returnOrderId.value}`)
+}
 
 // 监听窗口大小变化
 const handleResize = () => {
@@ -241,6 +285,31 @@ const goPrev = () => {
 
 const goNext = () => {
   swipeRef.value?.next()
+}
+
+const toggleFavorite = async () => {
+  if (!dish.value) return
+  if (userStore.isGuest) {
+    showToast('请先登录后收藏')
+    await router.push('/login')
+    return
+  }
+  if (favoriteUpdating.value) return
+
+  const previous = dish.value.is_favorite
+  const target = !previous
+  dish.value.is_favorite = target
+  favoriteUpdating.value = true
+  try {
+    if (target) await favoriteDish(dish.value.id)
+    else await unfavoriteDish(dish.value.id)
+    showSuccessToast(target ? '已收藏' : '已取消收藏')
+  } catch (error: any) {
+    dish.value.is_favorite = previous
+    showToast(error.response?.data?.detail || '收藏操作失败')
+  } finally {
+    favoriteUpdating.value = false
+  }
 }
 
 const confirmAddToCart = () => {
@@ -366,10 +435,18 @@ onUnmounted(() => {
   background: #fff;
 }
 
+.dish-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 .dish-name {
   font-size: 20px;
   font-weight: 600;
-  margin: 0 0 8px;
+  margin: 0;
   color: #262626;
 }
 

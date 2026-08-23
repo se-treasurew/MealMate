@@ -66,6 +66,7 @@ class DishResponse(DishBase):
     # 聚合评分：无评分时 avg_rating 为 None，前端显示"暂无评分"
     avg_rating: Optional[float] = None
     rating_count: int = 0
+    is_favorite: bool = False
 
     class Config:
         from_attributes = True

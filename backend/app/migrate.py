@@ -2,7 +2,11 @@
 import asyncio
 from sqlalchemy import text
 from app.core.database import engine, Base
-from app.models import DishReview, PushSubscription  # noqa: F401  确保模型注册到 Base.metadata
+from app.models import (  # noqa: F401  确保模型注册到 Base.metadata
+    DishFavorite,
+    DishReview,
+    PushSubscription,
+)
 from app.models.user import User  # noqa: F401
 
 # (表名, 列名, 建列 SQL)

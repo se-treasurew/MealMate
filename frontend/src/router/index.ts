@@ -16,6 +16,11 @@ const router = createRouter({
       component: () => import('@/views/Login.vue'),
     },
     {
+      path: '/favorites',
+      name: 'Favorites',
+      redirect: { path: '/', query: { tab: 'favorites' } },
+    },
+    {
       path: '/cart',
       name: 'Cart',
       component: () => import('@/views/Cart.vue'),

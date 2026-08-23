@@ -13,6 +13,8 @@ class OrderItemResponse(BaseModel):
     id: int
     dish_id: int
     dish_name: Optional[str] = None
+    dish_image_path: Optional[str] = None
+    dish_available: bool = False
     quantity: int
     item_note: Optional[str] = None
 

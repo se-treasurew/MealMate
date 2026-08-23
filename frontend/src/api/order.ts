@@ -12,6 +12,8 @@ export type CartItem = OrderItemData
 export interface OrderItem extends OrderItemData {
   id: number
   dish_name: string
+  dish_image_path: string | null
+  dish_available: boolean
 }
 
 export interface Order {
@@ -71,3 +73,6 @@ export const updateOrderStatus = (id: number, status: string, note?: string) =>
   apiClient.patch<Order>(`/api/orders/${id}`, { status, note })
 
 export const cancelOrder = (id: number) => apiClient.delete(`/api/orders/${id}`)
+
+export const permanentlyDeleteOrder = (id: number) =>
+  apiClient.delete(`/api/orders/${id}/permanent`)

@@ -1,7 +1,7 @@
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -68,23 +68,58 @@ async def try_transition_order(
     return result.rowcount == 1
 
 
-async def build_order_response(db: AsyncSession, order: Order) -> OrderResponse:
-    """构造订单响应，补充菜品名称"""
-    dish_ids = {item.dish_id for item in order.items}
+async def begin_order_write_transaction(db: AsyncSession) -> None:
+    """在读取订单前串行化 SQLite 写事务，防止删除与评价并发留下孤儿数据。"""
+    if db.in_transaction():
+        # Web 请求到这里之前只有认证查询；提交该只读事务后再获取写锁。
+        await db.commit()
+    bind = db.get_bind()
+    if bind.dialect.name == "sqlite":
+        await db.execute(text("BEGIN IMMEDIATE"))
 
-    # 批量查询菜品名称
-    dish_names = {}
-    if dish_ids:
-        result = await db.execute(select(Dish).where(Dish.id.in_(dish_ids)))
-        for d in result.scalars().all():
-            dish_names[d.id] = d.name
+
+async def load_order_dish_map(
+    db: AsyncSession, orders: list[Order]
+) -> dict[int, Dish]:
+    """一次加载一组订单涉及的当前菜品及图片。"""
+    dish_ids = {item.dish_id for order in orders for item in order.items}
+    if not dish_ids:
+        return {}
+    result = await db.execute(
+        select(Dish)
+        .options(selectinload(Dish.images))
+        .where(Dish.id.in_(dish_ids))
+    )
+    return {dish.id: dish for dish in result.scalars().unique().all()}
+
+
+def get_dish_cover_path(dish: Dish) -> str | None:
+    if not dish.images:
+        return None
+    cover = min(dish.images, key=lambda image: (image.sort_order or 0, image.id))
+    return cover.thumbnail_path or cover.image_path
+
+
+def build_order_response(
+    order: Order,
+    dish_map: dict[int, Dish],
+    current_user: User,
+) -> OrderResponse:
+    """构造订单响应，补充当前菜品名称、封面和可访问状态。"""
+    is_staff = current_user.is_feeder or current_user.is_admin
 
     items = []
     for item in order.items:
+        dish = dish_map.get(item.dish_id)
+        dish_available = bool(dish and (dish.status == "active" or is_staff))
         items.append(OrderItemResponse(
             id=item.id,
             dish_id=item.dish_id,
-            dish_name=dish_names.get(item.dish_id, f"菜品#{item.dish_id}"),
+            dish_name=dish.name if dish else f"菜品#{item.dish_id}",
+            dish_image_path=(
+                get_dish_cover_path(dish) if dish and dish_available else None
+            ),
+            dish_available=dish_available,
             quantity=item.quantity,
             item_note=item.item_note,
         ))
@@ -126,8 +161,8 @@ async def list_orders(
     stmt = stmt.order_by(Order.created_at.desc())
     result = await db.execute(stmt)
     orders = result.scalars().unique().all()
-
-    return [await build_order_response(db, o) for o in orders]
+    dish_map = await load_order_dish_map(db, orders)
+    return [build_order_response(order, dish_map, current_user) for order in orders]
 
 
 @router.post("", response_model=OrderResponse, status_code=201)
@@ -182,7 +217,8 @@ async def create_order(
     )
     result = await db.execute(stmt)
     order = result.scalar_one()
-    resp = await build_order_response(db, order)
+    dish_map = await load_order_dish_map(db, [order])
+    resp = build_order_response(order, dish_map, current_user)
 
     # 通知所有饲养员：有新订单
     item_count = sum(i.quantity for i in order.items)
@@ -221,7 +257,8 @@ async def get_order(
     ):
         raise HTTPException(status_code=403, detail="无权查看此订单")
 
-    return await build_order_response(db, order)
+    dish_map = await load_order_dish_map(db, [order])
+    return build_order_response(order, dish_map, current_user)
 
 
 @router.patch("/{order_id}", response_model=OrderResponse)
@@ -275,7 +312,8 @@ async def update_order(
     )
     result = await db.execute(stmt)
     order = result.scalar_one()
-    resp = await build_order_response(db, order)
+    dish_map = await load_order_dish_map(db, [order])
+    resp = build_order_response(order, dish_map, current_user)
 
     # 状态变更通知饭团
     if payload.status is not None and payload.status != "cancelled":
@@ -320,6 +358,32 @@ async def cancel_order(
     await db.commit()
 
 
+@router.delete("/{order_id}/permanent", status_code=204)
+async def permanently_delete_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """店长永久删除已完成或已取消的订单及其关联数据。"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="仅店长可永久删除订单")
+
+    await begin_order_write_transaction(db)
+    result = await db.execute(
+        select(Order).where(Order.id == order_id).with_for_update()
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    if order.status not in {"done", "cancelled"}:
+        raise HTTPException(status_code=400, detail="仅已完成或已取消订单可永久删除")
+
+    await db.execute(delete(DishReview).where(DishReview.order_id == order_id))
+    await db.execute(delete(OrderItem).where(OrderItem.order_id == order_id))
+    await db.execute(delete(Order).where(Order.id == order_id))
+    await db.commit()
+
+
 @router.post("/{order_id}/reviews", response_model=ReviewSubmitResponse)
 async def submit_order_reviews(
     order_id: int,
@@ -328,10 +392,12 @@ async def submit_order_reviews(
     current_user: User = Depends(get_current_user),
 ):
     """订单完成后，下单人对订单内菜品逐个评价（重复提交视为修改）"""
+    await begin_order_write_transaction(db)
     result = await db.execute(
         select(Order)
         .options(selectinload(Order.items))
         .where(Order.id == order_id)
+        .with_for_update()
     )
     order = result.scalar_one_or_none()
     if not order:

@@ -17,11 +17,17 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
 // 预缓存（vite-plugin-pwa 注入清单）
 precacheAndRoute(self.__WB_MANIFEST)
 
-// 菜单 API：NetworkFirst（5 分钟）
+// 游客菜单 API：NetworkFirst（5 分钟）。登录响应包含账号收藏状态，不进入共享缓存。
 registerRoute(
-  /\/api\/(dishes|categories|tags)/,
+  ({ request, url }) => {
+    if (request.method !== 'GET') return false
+    if (/^\/api\/(categories|tags)(?:\/|$)/.test(url.pathname)) return true
+    if (url.pathname === '/api/dishes/favorites') return false
+    const isDishRequest = /^\/api\/dishes(?:\/|$)/.test(url.pathname)
+    return isDishRequest && !request.headers.has('Authorization')
+  },
   new NetworkFirst({
-    cacheName: 'api-menu-cache',
+    cacheName: 'api-menu-cache-v2',
     plugins: [
       new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 300 }),
     ],

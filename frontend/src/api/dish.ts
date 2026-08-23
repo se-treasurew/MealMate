@@ -40,6 +40,7 @@ export interface Dish {
   // 聚合评分：无评分时 avg_rating 为 null
   avg_rating?: number | null
   rating_count?: number
+  is_favorite: boolean
 }
 
 export interface DishCreatePayload {
@@ -83,6 +84,9 @@ export const getDishes = (params?: {
   search?: string
 }) => apiClient.get<Dish[]>('/api/dishes', { params })
 
+export const getFavoriteDishes = (params?: { search?: string }) =>
+  apiClient.get<Dish[]>('/api/dishes/favorites', { params })
+
 export const getDish = (id: number) => apiClient.get<Dish>(`/api/dishes/${id}`)
 
 export const createDish = (data: DishCreatePayload) =>
@@ -93,6 +97,12 @@ export const updateDish = (id: number, data: DishUpdatePayload) =>
 
 export const deleteDish = (id: number) =>
   apiClient.delete(`/api/dishes/${id}`)
+
+export const favoriteDish = (id: number) =>
+  apiClient.put(`/api/dishes/${id}/favorite`)
+
+export const unfavoriteDish = (id: number) =>
+  apiClient.delete(`/api/dishes/${id}/favorite`)
 
 // ===== 菜品图片 =====
 export const uploadDishImages = (dishId: number, files: File[]) => {

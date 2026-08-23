@@ -72,82 +72,47 @@
             :name="tab.id"
           >
             <div class="dish-page">
+              <van-empty
+                v-if="tab.id === FAVORITES_TAB_ID && userStore.isGuest"
+                description="登录后查看收藏"
+              >
+                <van-button round type="primary" @click="goLogin">
+                  登录
+                </van-button>
+              </van-empty>
+
               <van-loading
-                v-if="dishPages[tab.id].loading"
+                v-else-if="dishPages[tab.id].loading"
                 type="spinner"
                 class="page-loading"
               />
 
               <template v-else>
-                <div class="dish-list" v-if="dishPages[tab.id].dishes.length > 0">
-                  <article
+                <TransitionGroup
+                  :name="tab.id === FAVORITES_TAB_ID ? 'favorite-list' : undefined"
+                  tag="div"
+                  class="dish-list"
+                >
+                  <DishCard
                     v-for="dish in dishPages[tab.id].dishes"
                     :key="dish.id"
-                    class="dish-card"
-                  >
-                    <button
-                      type="button"
-                      class="dish-card-main"
-                      :aria-label="`查看菜品：${dish.name}`"
-                      @click="goDishDetail(dish.id)"
-                    >
-                      <div class="dish-card-image">
-                        <img
-                          v-if="getCoverImage(dish) && !isImageBroken(dish)"
-                          :src="getCoverImage(dish)"
-                          :alt="dish.name"
-                          @error="markImageBroken(dish.id)"
-                        />
-                        <div v-else class="dish-card-placeholder">
-                          <van-icon name="photo-o" size="32" />
-                        </div>
-                      </div>
-                      <div class="dish-card-content">
-                        <h3 class="dish-card-title">{{ dish.name }}</h3>
-                        <div class="dish-card-rating">
-                          <template v-if="(dish.rating_count ?? 0) > 0">
-                            <van-rate
-                              :model-value="Math.round(dish.avg_rating ?? 0)"
-                              readonly
-                              allow-half
-                              size="12"
-                              color="#FF6B35"
-                              void-color="#ddd"
-                              :gutter="1"
-                            />
-                            <span class="rating-score">{{ (dish.avg_rating ?? 0).toFixed(1) }}</span>
-                            <span class="rating-count">{{ dish.rating_count }}人评分</span>
-                          </template>
-                          <span v-else class="rating-empty">暂无评分</span>
-                        </div>
-                        <div class="dish-card-tags">
-                          <van-tag plain v-if="getCategoryName(dish.category_id)">
-                            {{ getCategoryName(dish.category_id) }}
-                          </van-tag>
-                          <van-tag
-                            v-for="tag in dish.tags"
-                            :key="tag.id"
-                            type="warning"
-                          >
-                            {{ tag.name }}
-                          </van-tag>
-                        </div>
-                      </div>
-                    </button>
-                    <van-button
-                      round
-                      size="small"
-                      icon="plus"
-                      type="primary"
-                      class="quick-add-btn"
-                      aria-label="加入购物车"
-                      @click="quickAddToCart(dish)"
-                    />
-                  </article>
-                </div>
+                    :dish="dish"
+                    :category-name="getCategoryName(dish.category_id)"
+                    :favorite-updating="favoriteUpdatingIds.has(dish.id)"
+                    @view="goDishDetail"
+                    @toggle-favorite="toggleFavorite"
+                    @add-to-cart="quickAddToCart"
+                  />
+                </TransitionGroup>
                 <van-empty
-                  v-else
-                  :description="dishPages[tab.id].error ? '加载失败' : '暂无菜品'"
+                  v-if="dishPages[tab.id].dishes.length === 0"
+                  :description="
+                    dishPages[tab.id].error
+                      ? '加载失败'
+                      : tab.id === FAVORITES_TAB_ID
+                        ? '暂无收藏'
+                        : '暂无菜品'
+                  "
                   image="search"
                 >
                   <van-button round type="primary" @click="loadDishes(tab.id, true)">
@@ -168,21 +133,38 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { showToast, showSuccessToast } from 'vant'
 import { useUserStore } from '@/stores/user'
 import { useCartStore } from '@/stores/cart'
-import { getCategories, getDishes, imageUrl, type Category, type Dish } from '@/api/dish'
+import {
+  favoriteDish,
+  getCategories,
+  getDishes,
+  getFavoriteDishes,
+  imageUrl,
+  unfavoriteDish,
+  type Category,
+  type Dish,
+} from '@/api/dish'
 import FloatingCart from '@/components/FloatingCart.vue'
+import DishCard from '@/components/DishCard.vue'
 import { useHorizontalSwipe } from '@/composables/useHorizontalSwipe'
 
+const FAVORITES_TAB_ID = -1
+const ALL_TAB_ID = 0
+
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const cartStore = useCartStore()
 const searchKeyword = ref('')
-const activeCategory = ref(0)
+const openedFromFavoritesRoute = route.query.tab === 'favorites'
+const initialCategory = openedFromFavoritesRoute ? FAVORITES_TAB_ID : ALL_TAB_ID
+const activeCategory = ref(initialCategory)
 const categories = ref<Category[]>([])
-const brokenImageIds = ref(new Set<number>())
+const favoriteUpdatingIds = ref(new Set<number>())
+const favoriteOverrides = ref(new Map<number, boolean>())
 
 interface DishPage {
   dishes: Dish[]
@@ -190,6 +172,7 @@ interface DishPage {
   error: boolean
   loadedKeyword: string | null
   requestId: number
+  resultVersion: number
 }
 
 const createDishPage = (): DishPage => ({
@@ -198,14 +181,17 @@ const createDishPage = (): DishPage => ({
   error: false,
   loadedKeyword: null,
   requestId: 0,
+  resultVersion: 0,
 })
 
 const dishPages = reactive<Record<number, DishPage>>({
-  0: createDishPage(),
+  [FAVORITES_TAB_ID]: createDishPage(),
+  [ALL_TAB_ID]: createDishPage(),
 })
 
 const categoryTabs = computed(() => [
-  { id: 0, name: '全部' },
+  { id: FAVORITES_TAB_ID, name: '收藏' },
+  { id: ALL_TAB_ID, name: '全部' },
   ...categories.value,
 ])
 
@@ -215,6 +201,14 @@ const ensureDishPage = (categoryId: number) => {
   }
   return dishPages[categoryId]
 }
+
+const applyFavoriteOverrides = (dishes: Dish[], categoryId: number) =>
+  dishes.filter((dish) => {
+    const override = favoriteOverrides.value.get(dish.id)
+    if (override === undefined) return true
+    dish.is_favorite = override
+    return categoryId !== FAVORITES_TAB_ID || override
+  })
 
 // 加载分类
 const loadCategories = async () => {
@@ -233,20 +227,33 @@ const loadDishes = async (categoryId = activeCategory.value, force = false) => {
   const keyword = searchKeyword.value.trim()
   if (!force && page.loadedKeyword === keyword) return
 
+  if (categoryId === FAVORITES_TAB_ID && userStore.isGuest) {
+    page.requestId += 1
+    if (page.loadedKeyword !== keyword) page.resultVersion += 1
+    page.dishes = []
+    page.loading = false
+    page.error = false
+    page.loadedKeyword = keyword
+    return
+  }
+
   const requestId = ++page.requestId
   if (page.loadedKeyword !== keyword) {
+    page.resultVersion += 1
     page.dishes = []
   }
   page.loading = true
   page.error = false
 
   try {
-    const { data } = await getDishes({
-      search: keyword || undefined,
-      category_id: categoryId || undefined,
-    })
+    const { data } = categoryId === FAVORITES_TAB_ID
+      ? await getFavoriteDishes({ search: keyword || undefined })
+      : await getDishes({
+          search: keyword || undefined,
+          category_id: categoryId === ALL_TAB_ID ? undefined : categoryId,
+        })
     if (page.requestId === requestId) {
-      page.dishes = data
+      page.dishes = applyFavoriteOverrides(data, categoryId)
       page.loadedKeyword = keyword
     }
   } catch (e) {
@@ -264,12 +271,12 @@ const loadDishes = async (categoryId = activeCategory.value, force = false) => {
 const onSearch = () => {
   Object.values(dishPages).forEach((page) => {
     page.requestId += 1
+    page.resultVersion += 1
     page.dishes = []
     page.loading = false
     page.error = false
     page.loadedKeyword = null
   })
-  brokenImageIds.value = new Set()
   void loadDishes(activeCategory.value, true)
 }
 
@@ -311,19 +318,13 @@ const getCoverImage = (dish: Dish) => {
   return ''
 }
 
-const isImageBroken = (dish: Dish) => brokenImageIds.value.has(dish.id)
-
-const markImageBroken = (dishId: number) => {
-  brokenImageIds.value = new Set(brokenImageIds.value).add(dishId)
-}
-
 // 获取分类名称
 const getCategoryName = (id: number) => {
   return categories.value.find((c) => c.id === id)?.name || ''
 }
 
-const goDishDetail = (id: number) => {
-  router.push(`/dishes/${id}`)
+const goDishDetail = (dish: Dish) => {
+  router.push(`/dishes/${dish.id}`)
 }
 
 const goDishManage = () => {
@@ -341,6 +342,98 @@ const onSwitchMode = () => {
   )
 }
 
+const setFavoriteUpdating = (dishId: number, updating: boolean) => {
+  const next = new Set(favoriteUpdatingIds.value)
+  if (updating) next.add(dishId)
+  else next.delete(dishId)
+  favoriteUpdatingIds.value = next
+}
+
+const updateCachedFavorite = (dishId: number, isFavorite: boolean) => {
+  Object.values(dishPages).forEach((page) => {
+    page.dishes.forEach((cachedDish) => {
+      if (cachedDish.id === dishId) {
+        cachedDish.is_favorite = isFavorite
+      }
+    })
+  })
+}
+
+const removeDishFromFavoriteCache = (dishId: number) => {
+  const favoritePage = ensureDishPage(FAVORITES_TAB_ID)
+  const index = favoritePage.dishes.findIndex((cachedDish) => cachedDish.id === dishId)
+  if (index >= 0) favoritePage.dishes.splice(index, 1)
+}
+
+const invalidateFavoriteCache = () => {
+  const favoritePage = ensureDishPage(FAVORITES_TAB_ID)
+  favoritePage.requestId += 1
+  favoritePage.resultVersion += 1
+  favoritePage.dishes = []
+  favoritePage.loading = false
+  favoritePage.error = false
+  favoritePage.loadedKeyword = null
+}
+
+const toggleFavorite = async (dish: Dish) => {
+  if (userStore.isGuest) {
+    showToast('请先登录后收藏')
+    await router.push('/login')
+    return
+  }
+  if (favoriteUpdatingIds.value.has(dish.id)) return
+
+  const previous = dish.is_favorite
+  const target = !previous
+  const favoritePage = ensureDishPage(FAVORITES_TAB_ID)
+  const removedIndex = target
+    ? -1
+    : favoritePage.dishes.findIndex((cachedDish) => cachedDish.id === dish.id)
+  const removedDish = removedIndex >= 0 ? favoritePage.dishes[removedIndex] : null
+  const operationResultVersion = favoritePage.resultVersion
+  const operationKeyword = favoritePage.loadedKeyword
+  setFavoriteUpdating(dish.id, true)
+  favoriteOverrides.value.set(dish.id, target)
+  updateCachedFavorite(dish.id, target)
+  if (!target) removeDishFromFavoriteCache(dish.id)
+  try {
+    if (target) await favoriteDish(dish.id)
+    else await unfavoriteDish(dish.id)
+    favoriteOverrides.value.set(dish.id, target)
+    updateCachedFavorite(dish.id, target)
+    if (target) {
+      invalidateFavoriteCache()
+    } else {
+      removeDishFromFavoriteCache(dish.id)
+    }
+    showSuccessToast(target ? '已收藏' : '已取消收藏')
+  } catch (error: any) {
+    favoriteOverrides.value.set(dish.id, previous)
+    updateCachedFavorite(dish.id, previous)
+    const canRestoreRemovedDish =
+      !target &&
+      removedDish !== null &&
+      favoritePage.resultVersion === operationResultVersion &&
+      favoritePage.loadedKeyword === operationKeyword &&
+      !favoritePage.dishes.some((cachedDish) => cachedDish.id === dish.id)
+
+    if (!target) {
+      if (canRestoreRemovedDish && removedDish) {
+        removedDish.is_favorite = true
+        favoritePage.dishes.splice(removedIndex, 0, removedDish)
+      } else {
+        favoritePage.loadedKeyword = null
+        if (activeCategory.value === FAVORITES_TAB_ID) {
+          void loadDishes(FAVORITES_TAB_ID, true)
+        }
+      }
+    }
+    showToast(error.response?.data?.detail || '收藏操作失败')
+  } finally {
+    setFavoriteUpdating(dish.id, false)
+  }
+}
+
 // 快捷加购（默认数量 1，备注留空，详细信息可在点餐车调整）
 const quickAddToCart = (dish: Dish) => {
   cartStore.addItem({
@@ -356,8 +449,9 @@ const quickAddToCart = (dish: Dish) => {
 }
 
 onMounted(async () => {
+  if (openedFromFavoritesRoute) void router.replace('/')
   await loadCategories()
-  await loadDishes(0)
+  await loadDishes(activeCategory.value)
 })
 </script>
 
@@ -377,16 +471,6 @@ onMounted(async () => {
   padding: 48px 0;
 }
 
-.dish-card {
-  position: relative;
-  min-height: 104px;
-  background: white;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transition: box-shadow 0.2s, transform 0.2s;
-}
-
 .dish-list {
   display: flex;
   flex-direction: column;
@@ -394,118 +478,19 @@ onMounted(async () => {
   padding: 12px;
 }
 
-.dish-card-main {
-  display: flex;
-  align-items: stretch;
-  width: 100%;
-  min-height: 104px;
-  padding: 10px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+.dish-list:empty {
+  padding: 0;
 }
 
-.dish-card-main:focus-visible {
-  outline: 2px solid var(--van-primary-color);
-  outline-offset: -2px;
+.favorite-list-enter-active,
+.favorite-list-leave-active,
+.favorite-list-move {
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-.dish-card:has(.dish-card-main:active) {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-  transform: translateY(1px);
-}
-
-.dish-card-image {
-  flex: 0 0 104px;
-  width: 104px;
-  height: 104px;
-  overflow: hidden;
-  position: relative;
-  background: #f5f5f5;
-  border-radius: 8px;
-}
-
-.dish-card-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.dish-card-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #dcdee0;
-}
-
-.dish-card-content {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 2px 42px 2px 12px;
-}
-
-.dish-card-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #262626;
-  margin: 0;
-  flex: 1;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-.dish-card-rating {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 2px;
-}
-
-.rating-score {
-  font-size: 12px;
-  color: #FF6B35;
-  font-weight: 600;
-}
-
-.rating-count {
-  font-size: 11px;
-  color: #999;
-}
-
-.rating-empty {
-  font-size: 11px;
-  color: #bbb;
-}
-
-.quick-add-btn {
-  position: absolute;
-  top: 14px;
-  right: 12px;
-  z-index: 1;
-}
-
-.dish-card-tags {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-}
-
-@media (max-width: 420px) {
-  .dish-card-image {
-    flex-basis: 88px;
-    width: 88px;
-    height: 88px;
-  }
+.favorite-list-enter-from,
+.favorite-list-leave-to {
+  opacity: 0;
+  transform: translateX(-16px);
 }
 </style>

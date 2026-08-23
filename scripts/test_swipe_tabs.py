@@ -86,6 +86,20 @@ class SwipeTabSourceTests(unittest.TestCase):
         self.assertIn('v-for="tab in categoryTabs"', source)
         self.assertIn("dishPages", source)
         self.assertIn("requestId", source)
+        self.assertIn("const FAVORITES_TAB_ID = -1", source)
+        self.assertIn("const ALL_TAB_ID = 0", source)
+        self.assertIn("getFavoriteDishes({ search: keyword || undefined })", source)
+        self.assertIn("<TransitionGroup", source)
+
+    def test_home_favorites_tab_precedes_all_and_backend_categories(self):
+        source = self.read_view("Home.vue")
+
+        favorites = source.index("{ id: FAVORITES_TAB_ID, name: '收藏' }")
+        all_dishes = source.index("{ id: ALL_TAB_ID, name: '全部' }")
+        backend_categories = source.index("...categories.value")
+        self.assertLess(favorites, all_dishes)
+        self.assertLess(all_dishes, backend_categories)
+        self.assertIn("const activeCategory = ref(initialCategory)", source)
 
     def test_home_dish_panel_height_follows_content(self):
         source = self.read_view("Home.vue")

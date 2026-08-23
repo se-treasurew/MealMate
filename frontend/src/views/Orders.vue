@@ -78,13 +78,22 @@
                           去评价
                         </van-button>
                         <van-button
-                          v-if="order.status === 'pending'"
+                          v-if="canCancel(order)"
                           size="small"
                           plain
                           type="danger"
                           @click.stop="onCancel(order)"
                         >
                           取消订单
+                        </van-button>
+                        <van-button
+                          v-if="canPermanentlyDelete(order)"
+                          size="small"
+                          plain
+                          type="danger"
+                          @click.stop="onPermanentlyDelete(order)"
+                        >
+                          永久删除
                         </van-button>
                       </div>
                     </template>
@@ -106,6 +115,7 @@ import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
 import {
   getOrders,
   cancelOrder,
+  permanentlyDeleteOrder,
   statusText,
   statusColor,
   type Order,
@@ -201,6 +211,12 @@ const itemsSummary = (order: Order) => {
 const canReview = (order: Order) =>
   order.status === 'done' && order.user_id === userStore.user?.id
 
+const canCancel = (order: Order) =>
+  order.status === 'pending' && order.user_id === userStore.user?.id
+
+const canPermanentlyDelete = (order: Order) =>
+  userStore.isAdmin && (order.status === 'done' || order.status === 'cancelled')
+
 const onStatusChange = (name: string | number) => {
   const filter = String(name) as OrderStatusFilter
   statusFilter.value = filter
@@ -262,6 +278,27 @@ const onCancel = (order: Order) => {
         await loadOrders(statusFilter.value, true)
       } catch (e: any) {
         showToast(e.response?.data?.detail || '取消失败')
+      }
+    })
+    .catch(() => {})
+}
+
+const onPermanentlyDelete = (order: Order) => {
+  showConfirmDialog({
+    title: '永久删除订单',
+    message: '订单明细和关联评价将无法恢复，确定继续吗？',
+    confirmButtonText: '永久删除',
+    confirmButtonColor: '#ee0a24',
+  })
+    .then(async () => {
+      try {
+        await permanentlyDeleteOrder(order.id)
+        showSuccessToast('订单已永久删除')
+        invalidateOrderPage('')
+        invalidateOrderPage(order.status as OrderStatusFilter)
+        await loadOrders(statusFilter.value, true)
+      } catch (error: any) {
+        showToast(error.response?.data?.detail || '删除失败')
       }
     })
     .catch(() => {})

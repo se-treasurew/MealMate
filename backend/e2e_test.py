@@ -307,6 +307,11 @@ async def main():
         order_id = r.json()["id"] if r.status_code == 201 else 0
         if r.status_code == 201:
             record("订单含菜品名", r.json()["items"][0]["dish_name"] == "闭环测试菜")
+            record(
+                "订单含当前菜品封面和可访问状态",
+                bool(r.json()["items"][0].get("dish_image_path"))
+                and r.json()["items"][0].get("dish_available") is True,
+            )
 
         # 6.2 空订单被拒
         r = await client.post("/api/orders", headers=headers, json={
@@ -326,6 +331,12 @@ async def main():
         if order_id:
             r = await client.get(f"/api/orders/{order_id}", headers=headers)
             record("查询订单详情", r.status_code == 200)
+            record(
+                "订单详情返回当前菜品封面",
+                r.status_code == 200
+                and bool(r.json()["items"][0].get("dish_image_path"))
+                and r.json()["items"][0].get("dish_available") is True,
+            )
 
         # ========== 7. 订单状态流转 ==========
         print("\n[7] 订单状态流转")
@@ -578,6 +589,140 @@ async def main():
         r_role = await client.get("/api/users", headers=new_user_headers)
         record("非管理员访问用户管理被拒", r_role.status_code == 403)
 
+        # 10.5b 账号级菜品收藏、固定菜单顺序与收藏页隔离
+        favorite_sort_dish = await client.post("/api/dishes", headers=headers, json={
+            "name": "闭环测试新菜",
+            "category_id": cat_id,
+            "status": "active",
+            "links": [],
+        })
+        favorite_sort_dish_id = (
+            favorite_sort_dish.json().get("id")
+            if favorite_sort_dish.status_code == 201
+            else 0
+        )
+        record("创建收藏排序对照菜品", favorite_sort_dish_id > 0)
+        menu_before_favorite = await client.get(
+            "/api/dishes",
+            headers=new_user_headers,
+            params={"search": "闭环测试"},
+        )
+        before_ids = (
+            [row["id"] for row in menu_before_favorite.json()]
+            if menu_before_favorite.status_code == 200
+            else []
+        )
+        favorite_first = await client.put(
+            f"/api/dishes/{dish_id}/favorite", headers=new_user_headers
+        )
+        favorite_again = await client.put(
+            f"/api/dishes/{dish_id}/favorite", headers=new_user_headers
+        )
+        record(
+            "重复收藏保持幂等",
+            favorite_first.status_code == 204 and favorite_again.status_code == 204,
+        )
+        menu_after_favorite = await client.get(
+            "/api/dishes",
+            headers=new_user_headers,
+            params={"search": "闭环测试"},
+        )
+        after_rows = (
+            menu_after_favorite.json()
+            if menu_after_favorite.status_code == 200
+            else []
+        )
+        record(
+            "收藏前后菜单搜索顺序不变",
+            len(before_ids) >= 2
+            and [row["id"] for row in after_rows] == before_ids
+            and next(
+                row for row in after_rows if row["id"] == dish_id
+            ).get("is_favorite") is True,
+        )
+        first_favorites = await client.get(
+            "/api/dishes/favorites", headers=new_user_headers
+        )
+        record(
+            "收藏页返回当前账号收藏",
+            first_favorites.status_code == 200
+            and first_favorites.json()[0]["id"] == dish_id
+            and first_favorites.json()[0].get("is_favorite") is True,
+        )
+        favorite_newer = await client.put(
+            f"/api/dishes/{favorite_sort_dish_id}/favorite",
+            headers=new_user_headers,
+        )
+        recent_favorites = await client.get(
+            "/api/dishes/favorites", headers=new_user_headers
+        )
+        record(
+            "收藏页按最近收藏时间倒序",
+            favorite_newer.status_code == 204
+            and recent_favorites.status_code == 200
+            and [row["id"] for row in recent_favorites.json()[:2]]
+            == [favorite_sort_dish_id, dish_id],
+        )
+        favorite_name_search = await client.get(
+            "/api/dishes/favorites",
+            headers=new_user_headers,
+            params={"search": "闭环测试新菜"},
+        )
+        record(
+            "收藏页按菜名搜索",
+            favorite_name_search.status_code == 200
+            and [row["id"] for row in favorite_name_search.json()]
+            == [favorite_sort_dish_id],
+        )
+        favorite_tag_search = await client.get(
+            "/api/dishes/favorites",
+            headers=new_user_headers,
+            params={"search": tag_name},
+        )
+        record(
+            "收藏页按标签搜索",
+            favorite_tag_search.status_code == 200
+            and [row["id"] for row in favorite_tag_search.json()] == [dish_id],
+        )
+        favorite_no_match = await client.get(
+            "/api/dishes/favorites",
+            headers=new_user_headers,
+            params={"search": "收藏页不存在的菜"},
+        )
+        record(
+            "收藏页搜索无匹配返回空列表",
+            favorite_no_match.status_code == 200
+            and favorite_no_match.json() == [],
+        )
+        admin_favorite_list = await client.get(
+            "/api/dishes/favorites", headers=headers
+        )
+        admin_rows = (
+            admin_favorite_list.json()
+            if admin_favorite_list.status_code == 200
+            else []
+        )
+        record(
+            "不同账号收藏互不影响",
+            admin_favorite_list.status_code == 200 and admin_rows == [],
+        )
+        unfavorite_first = await client.delete(
+            f"/api/dishes/{dish_id}/favorite", headers=new_user_headers
+        )
+        unfavorite_again = await client.delete(
+            f"/api/dishes/{dish_id}/favorite", headers=new_user_headers
+        )
+        unfavorite_newer = await client.delete(
+            f"/api/dishes/{favorite_sort_dish_id}/favorite",
+            headers=new_user_headers,
+        )
+        record(
+            "重复取消收藏保持幂等",
+            unfavorite_first.status_code == 204
+            and unfavorite_again.status_code == 204
+            and unfavorite_newer.status_code == 204,
+        )
+
         # 10.6 改昵称 + 预设头像
         r5 = await client.put("/api/auth/profile", headers=new_user_headers, json={
             "nickname": "改名A", "avatar_url": "/avatars/cat.png",
@@ -637,6 +782,10 @@ async def main():
         user_order_id = user_order.json().get("id") if user_order.status_code == 201 else None
         record("普通用户创建待处理订单", user_order_id is not None)
         if user_order_id:
+            active_delete = await client.delete(
+                f"/api/orders/{user_order_id}/permanent", headers=headers
+            )
+            record("活动订单不可永久删除", active_delete.status_code == 400)
             staff_cancel = await client.patch(
                 f"/api/orders/{user_order_id}",
                 headers=headers,
@@ -647,14 +796,70 @@ async def main():
                 f"/api/orders/{user_order_id}", headers=new_user_headers
             )
             record("订单本人可取消待处理订单", owner_cancel.status_code == 204)
+            member_delete = await client.delete(
+                f"/api/orders/{user_order_id}/permanent", headers=new_user_headers
+            )
+            record("普通用户不可永久删除订单", member_delete.status_code == 403)
+            make_dish_inactive = await client.put(
+                f"/api/dishes/{dish_id}",
+                headers=headers,
+                json={"status": "inactive"},
+            )
+            member_order = await client.get(
+                f"/api/orders/{user_order_id}", headers=new_user_headers
+            )
+            admin_order = await client.get(
+                f"/api/orders/{user_order_id}", headers=headers
+            )
+            member_item = (
+                member_order.json()["items"][0]
+                if member_order.status_code == 200 else {}
+            )
+            admin_item = (
+                admin_order.json()["items"][0]
+                if admin_order.status_code == 200 else {}
+            )
+            record(
+                "下架菜品对普通订单用户不可跳转",
+                make_dish_inactive.status_code == 200
+                and member_item.get("dish_available") is False
+                and member_item.get("dish_image_path") is None,
+            )
+            record(
+                "下架菜品对店长仍可跳转",
+                admin_item.get("dish_available") is True
+                and bool(admin_item.get("dish_image_path")),
+            )
+            restore_dish = await client.put(
+                f"/api/dishes/{dish_id}",
+                headers=headers,
+                json={"status": "active"},
+            )
+            record("订单权限测试后恢复菜品上架", restore_dish.status_code == 200)
 
         # 10.8 切换饲养员权限
         r7 = await client.put(f"/api/users/{new_user_id}/feeder",
                               headers=headers, json={"is_feeder": True})
         record("授予饲养员权限", r7.status_code == 200 and r7.json()["is_feeder"] is True)
+        if user_order_id:
+            feeder_delete = await client.delete(
+                f"/api/orders/{user_order_id}/permanent", headers=new_user_headers
+            )
+            record("饲养员不可永久删除订单", feeder_delete.status_code == 403)
         r8 = await client.put(f"/api/users/{new_user_id}/feeder",
                               headers=headers, json={"is_feeder": False})
         record("收回饲养员权限", r8.status_code == 200 and r8.json()["is_feeder"] is False)
+        if user_order_id:
+            admin_delete = await client.delete(
+                f"/api/orders/{user_order_id}/permanent", headers=headers
+            )
+            deleted_detail = await client.get(
+                f"/api/orders/{user_order_id}", headers=headers
+            )
+            record(
+                "店长永久删除终态订单",
+                admin_delete.status_code == 204 and deleted_detail.status_code == 404,
+            )
 
         # 10.9 禁用账号
         r9 = await client.put(f"/api/users/{new_user_id}/status",
@@ -763,6 +968,12 @@ async def main():
         if inactive_id:
             r = await client.delete(f"/api/dishes/{inactive_id}", headers=headers)
             record("删除下架测试菜品", r.status_code == 204)
+
+        if favorite_sort_dish_id:
+            r = await client.delete(
+                f"/api/dishes/{favorite_sort_dish_id}", headers=headers
+            )
+            record("删除收藏排序对照菜品", r.status_code == 204)
 
         # 删除自动创建的测试标签
         r = await client.get("/api/tags", headers=headers)

@@ -24,13 +24,36 @@
 
         <!-- 菜品明细 -->
         <van-cell-group inset title="菜品明细">
-          <div v-for="item in order.items" :key="item.id" class="dish-item">
-            <div class="dish-row">
-              <span class="dish-name">{{ item.dish_name }}</span>
-              <span class="dish-qty">x{{ item.quantity }}</span>
+          <button
+            v-for="item in order.items"
+            :key="item.id"
+            type="button"
+            class="dish-item"
+            :class="{ 'dish-item-disabled': !item.dish_available }"
+            :disabled="!item.dish_available"
+            @click="goDishDetail(item)"
+          >
+            <div class="dish-item-image">
+              <img
+                v-if="item.dish_image_path && !brokenDishImageIds.has(item.dish_id)"
+                :src="imageUrl(item.dish_image_path)"
+                :alt="item.dish_name"
+                @error="markDishImageBroken(item.dish_id)"
+              />
+              <van-icon v-else name="photo-o" size="28" />
             </div>
-            <div v-if="item.item_note" class="dish-note">备注：{{ item.item_note }}</div>
-          </div>
+            <div class="dish-item-content">
+              <div class="dish-row">
+                <span class="dish-name">{{ item.dish_name }}</span>
+                <span class="dish-qty">x{{ item.quantity }}</span>
+              </div>
+              <div v-if="item.item_note" class="dish-note">备注：{{ item.item_note }}</div>
+              <div v-if="!item.dish_available" class="dish-unavailable">
+                菜品已不可查看
+              </div>
+            </div>
+            <van-icon v-if="item.dish_available" name="arrow" class="dish-arrow" />
+          </button>
         </van-cell-group>
 
         <!-- 整单备注 -->
@@ -69,6 +92,12 @@
         <!-- 取消按钮（饭团，待处理） -->
         <div v-if="order.status === 'pending' && order.user_id === userStore.user?.id" class="cancel-area">
           <van-button plain block type="danger" @click="onCancel">取消订单</van-button>
+        </div>
+
+        <div v-if="canPermanentlyDelete" class="permanent-delete-area">
+          <van-button plain block type="danger" @click="onPermanentlyDelete">
+            永久删除订单
+          </van-button>
         </div>
 
         <!-- 评价区块（订单本人，已完成订单） -->
@@ -124,10 +153,13 @@ import {
   getOrder,
   updateOrderStatus,
   cancelOrder,
+  permanentlyDeleteOrder,
   statusText,
   statusColor,
   type Order,
+  type OrderItem,
 } from '@/api/order'
+import { imageUrl } from '@/api/dish'
 import { submitOrderReviews, getOrderReviews } from '@/api/review'
 import { useUserStore } from '@/stores/user'
 
@@ -137,6 +169,7 @@ const userStore = useUserStore()
 
 const loading = ref(true)
 const order = ref<Order | null>(null)
+const brokenDishImageIds = ref(new Set<number>())
 
 // ===== 评价 =====
 interface ReviewFormEntry {
@@ -151,6 +184,12 @@ const canReview = computed(
   () =>
     order.value?.status === 'done' &&
     order.value.user_id === userStore.user?.id
+)
+
+const canPermanentlyDelete = computed(
+  () =>
+    userStore.isAdmin &&
+    (order.value?.status === 'done' || order.value?.status === 'cancelled')
 )
 
 const ratingText = (rating: number): string => {
@@ -229,6 +268,19 @@ const formatTime = (t?: string) => {
   return new Date(t).toLocaleString('zh-CN')
 }
 
+const markDishImageBroken = (dishId: number) => {
+  brokenDishImageIds.value = new Set(brokenDishImageIds.value).add(dishId)
+}
+
+const goDishDetail = (item: OrderItem) => {
+  if (!order.value || !item.dish_available) return
+  router.push({
+    name: 'DishDetail',
+    params: { id: item.dish_id },
+    query: { from_order: String(order.value.id) },
+  })
+}
+
 const changeStatus = (status: string) => {
   updateOrderStatus(order.value!.id, status)
     .then(() => {
@@ -249,6 +301,26 @@ const onCancel = () => {
         router.push('/orders')
       } catch (e: any) {
         showToast(e.response?.data?.detail || '取消失败')
+      }
+    })
+    .catch(() => {})
+}
+
+const onPermanentlyDelete = () => {
+  if (!order.value) return
+  showConfirmDialog({
+    title: '永久删除订单',
+    message: '订单明细和关联评价将无法恢复，确定继续吗？',
+    confirmButtonText: '永久删除',
+    confirmButtonColor: '#ee0a24',
+  })
+    .then(async () => {
+      try {
+        await permanentlyDeleteOrder(order.value!.id)
+        showSuccessToast('订单已永久删除')
+        await router.push('/orders')
+      } catch (error: any) {
+        showToast(error.response?.data?.detail || '删除失败')
       }
     })
     .catch(() => {})
@@ -277,12 +349,53 @@ onMounted(loadOrder)
   font-size: 14px;
 }
 .dish-item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
   padding: 12px 16px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: #fff;
+  border: 0;
   border-bottom: 1px solid #f5f5f5;
+}
+.dish-item:disabled {
+  cursor: default;
+}
+.dish-item-disabled {
+  color: #969799;
+}
+.dish-item-image {
+  display: flex;
+  flex: 0 0 64px;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  color: #c8c9cc;
+  background: #f5f5f5;
+  border-radius: 8px;
+}
+.dish-item-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.dish-item-content {
+  flex: 1;
+  min-width: 0;
 }
 .dish-row {
   display: flex;
   justify-content: space-between;
+}
+.dish-arrow {
+  flex: none;
+  color: #969799;
 }
 .dish-name {
   font-weight: bold;
@@ -295,6 +408,11 @@ onMounted(loadOrder)
   font-size: 13px;
   margin-top: 4px;
 }
+.dish-unavailable {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #969799;
+}
 .action-buttons {
   display: flex;
   gap: 8px;
@@ -302,6 +420,10 @@ onMounted(loadOrder)
 }
 .cancel-area {
   padding: 16px;
+}
+
+.permanent-delete-area {
+  padding: 0 16px 16px;
 }
 
 .review-item {

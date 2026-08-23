@@ -4,6 +4,7 @@ from app.models.association import DishTag
 from app.models.order import Order, OrderItem, DishReview
 from app.models.config import SystemConfig
 from app.models.push import PushSubscription
+from app.models.favorite import DishFavorite
 
 __all__ = [
     "User",
@@ -19,4 +20,5 @@ __all__ = [
     "DishReview",
     "SystemConfig",
     "PushSubscription",
+    "DishFavorite",
 ]

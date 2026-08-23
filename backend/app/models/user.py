@@ -26,6 +26,9 @@ class User(Base):
     orders = relationship("Order", back_populates="user")
     dishes_created = relationship("Dish", back_populates="creator")
     reviews = relationship("DishReview", back_populates="user")
+    favorite_dishes = relationship(
+        "DishFavorite", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class DishCategory(Base):
@@ -62,3 +65,6 @@ class Dish(Base):
     tag_links = relationship("DishTag", back_populates="dish", cascade="all, delete-orphan")
     tags = relationship("Tag", secondary="dish_tag", viewonly=True)
     reviews = relationship("DishReview", back_populates="dish", cascade="all, delete-orphan")
+    favorited_by = relationship(
+        "DishFavorite", back_populates="dish", cascade="all, delete-orphan"
+    )
