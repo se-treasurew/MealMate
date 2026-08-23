@@ -1,7 +1,7 @@
 # 饭饭之交（MealMate）v1.0 产品需求文档
 
 **文档版本：** v1.0
-**更新日期：** 2026-08-21
+**更新日期：** 2026-08-23
 **产品形态：** 家庭私有部署的移动优先点餐 PWA
 
 ## 1. 产品目标
@@ -102,7 +102,8 @@ pending -> accepted -> cooking -> done
 - Manifest 提供应用名称、主题色、192/512 图标、`standalone` 展示模式。
 - Service Worker 使用 `injectManifest`，预缓存前端资源；菜单 API 使用 NetworkFirst，上传图片使用 CacheFirst。
 - 前端由 `virtual:pwa-register` 统一注册 Service Worker；新版本在后台安装后显示更新提示，由用户确认刷新。入口文件、`sw.js`、Manifest 和图标禁止长期缓存，带内容哈希的 `/assets/` 文件使用长期缓存。
-- Web Push 已停用，部署不需要 VAPID 或 FCM 网络；旧版推送接口仅保留兼容响应，不发送通知。
+- Web Push 已停用。考虑到中国大陆网络下 FCM 可用性不可控，推送失败不得影响登录、菜单或订单等主业务；当前实现不连接任何推送服务，部署不需要 VAPID 或 FCM 网络。
+- 旧版 `/api/push/*` 仅保留兼容响应，不保存新订阅、不读取历史订阅，也不发送通知。订单状态由用户在订单页查看。
 
 ## 5. API 契约摘要
 

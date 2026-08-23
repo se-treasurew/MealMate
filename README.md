@@ -2,6 +2,9 @@
 
 面向家庭私有部署的移动端点餐 PWA。饭团可浏览菜品并下单，饲养员处理菜单和订单，店长负责成员与系统配置。v1.0 已覆盖 90+ 项在临时数据库、临时上传目录和随机端口中运行的隔离端到端测试。
 
+> [!IMPORTANT]
+> MealMate 已关闭 Web Push/后台通知。为避免中国大陆网络下 FCM 不可达影响后端稳定性，系统不再连接推送服务；订单状态请在订单页查看。`/api/push/*` 仅用于兼容旧版 PWA，不保存新订阅，也不会发送通知。部署时无需配置 VAPID 密钥。
+
 ## 技术栈与运行环境
 
 - 后端：Python 3.13、FastAPI、SQLAlchemy 2.0 异步 ORM、aiosqlite、SQLite、JWT、Pillow。
@@ -78,6 +81,8 @@ npm run dev
 | `CORS_ORIGINS` | 否 | 本地 `3000` 来源 | 逗号分隔的精确允许来源；生产环境必须改为实际站点来源 |
 | `VITE_API_BASE_URL` | 否 | 空（同源） | 前端构建期 API/上传基础地址 |
 
+`VAPID_PUBLIC_KEY` 和 `VAPID_PRIVATE_KEY` 已废弃，不是有效配置项。旧部署可从 `.env` 删除这两项，并移除自定义 Compose 中的 VAPID 私钥挂载；即使保留，应用也不会读取或启用推送。
+
 ## 数据库初始化与迁移
 
 - 新部署：在 `backend` 目录运行 `python -m app.init_db`，创建表、初始店长、预设分类、标签和角色显示名称。
@@ -100,6 +105,14 @@ docker compose exec backend python -m app.init_db
 PowerShell 使用 `$env:JWT_SECRET='...'` 和 `$env:ADMIN_INITIAL_PASSWORD='...'`。生产 HTTPS 部署需按实际域名调整 `docker/Caddyfile`；当前默认配置提供 HTTP 同源反向代理，适合本地验证，不应原样暴露到公网。
 
 SQLite 数据保存在 `backend/data/`，上传内容保存在 `backend/uploads/`。两者均为运行数据，不进入发布树，部署者必须同时备份。Web Push 已停用，不需要配置 VAPID，也不依赖 FCM 网络连通性；订单状态请在订单页查看。
+
+从曾启用推送的版本升级时，重新构建 backend 和 frontend 即可，无需数据库迁移或删除历史订阅表：
+
+```bash
+docker compose up -d --build backend frontend
+```
+
+`push_subscription` 表仅作为历史兼容数据保留，系统不会继续写入。升级后可删除服务器上的 VAPID 环境变量和私钥文件，但删除前应确认该私钥未被其他应用共用。
 
 前端发布新版本时，只需重新构建 frontend 服务：
 
