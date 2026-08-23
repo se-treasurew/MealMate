@@ -1,6 +1,6 @@
 """
 饭饭之交 闭环测试脚本
-覆盖：认证、分类、标签、菜品、图片、订单、状态流转、推送、系统配置、用户管理、游客
+覆盖：认证、分类、标签、菜品、图片、订单、状态流转、推送兼容、系统配置、用户管理、游客
 用法：python e2e_test.py  （默认 http://localhost:8000，可用环境变量 E2E_BASE 指定其他地址）
 """
 import asyncio
@@ -508,15 +508,21 @@ async def main():
             )
             record("删除后评分清空显示暂无评分", cleared_ok)
 
-        # ========== 9. 推送 ==========
-        print("\n[9] 推送通知")
-        # 9.1 获取 VAPID 公钥（未配置应返回 enabled=false）
+        # ========== 9. 推送兼容接口 ==========
+        print("\n[9] 推送兼容接口")
+        # 旧版 PWA 仍可请求，但接口必须立即返回停用状态。
         r = await client.get("/api/push/vapid-public-key", headers=headers)
-        record("获取 VAPID 状态", r.status_code == 200, f"enabled={r.json().get('enabled')}")
+        record(
+            "推送状态固定为停用",
+            r.status_code == 200
+            and r.json() == {"enabled": False, "public_key": None},
+        )
 
-        # 9.2 测试推送（无订阅应返回 400）
         r = await client.post("/api/push/test", headers=headers, json={"message": "test"})
-        record("无订阅时测试推送被拒", r.status_code == 400)
+        record(
+            "旧版测试推送接口快速降级",
+            r.status_code == 200 and r.json().get("enabled") is False,
+        )
 
         # ========== 10. 用户管理与游客 ==========
         print("\n[10] 用户管理与游客")

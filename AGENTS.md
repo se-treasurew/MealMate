@@ -44,4 +44,4 @@ Python 使用 4 个空格和 `snake_case`；TypeScript/Vue 使用 2 个空格、
 
 ## 安全与配置
 
-禁止提交 `.env`、PEM 私钥、SQLite 数据库、`backend/uploads/`、依赖目录和构建产物，仅提交 `.env.example`。认证、上传和 VAPID 密钥通过环境变量或仓库外只读文件提供；修改发布配置后必须重新运行发布树扫描。
+禁止提交 `.env`、PEM 私钥、SQLite 数据库、`backend/uploads/`、依赖目录和构建产物，仅提交 `.env.example`。认证密钥通过环境变量提供；历史 VAPID 私钥虽已停用，仍不得进入仓库。修改发布配置后必须重新运行发布树扫描。

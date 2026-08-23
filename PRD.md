@@ -12,7 +12,7 @@ v1.0 的发布目标是：
 
 1. 在手机浏览器和安装后的 PWA 中完成浏览、下单、处理订单的闭环。
 2. 通过明确的角色权限、严格订单状态机和会话失效机制保护家庭数据。
-3. 支持单机 SQLite 私有部署、Docker Compose 部署和可选 Web Push。
+3. 支持单机 SQLite 私有部署和 Docker Compose 部署。
 4. 使用 80+ 项隔离端到端测试和发布树扫描作为发布门禁。
 
 ## 2. 技术基线
@@ -21,9 +21,9 @@ v1.0 的发布目标是：
 | --- | --- |
 | 后端 | Python 3.13、FastAPI、Uvicorn |
 | 数据访问 | SQLAlchemy 2.0 异步 ORM、aiosqlite、SQLite |
-| 认证与媒体 | JWT、passlib/bcrypt、Pillow、pywebpush/py-vapid |
+| 认证与媒体 | JWT、passlib/bcrypt、Pillow |
 | 前端 | Node.js 22、Vue 3、TypeScript、Vite、Vant 4、Pinia、Vue Router |
-| PWA | vite-plugin-pwa `injectManifest`、自定义 Service Worker、Web Push |
+| PWA | vite-plugin-pwa `injectManifest`、自定义 Service Worker、离线缓存与版本更新 |
 | 部署 | Docker Compose、Nginx、Caddy，同源 API/上传反向代理 |
 
 前端 `VITE_API_BASE_URL` 默认为空，即使用同源 `/api` 和 `/uploads`。本地 Vite 开发服务器通过代理连接 `localhost:8000`；该开发地址不得进入生产构建。后端 `CORS_ORIGINS` 使用逗号分隔的精确来源列表，生产部署必须替换本地默认来源。
@@ -39,7 +39,7 @@ v1.0 的发布目标是：
 | 饭团 | 浏览上架菜品、维护购物车、登录后下单、查看本人订单、取消本人待处理订单 |
 | 游客 | 浏览上架菜品列表与详情、分类和标签；维护浏览器本地购物车 |
 
-游客不能提交订单、查看订单、订阅个人推送或进入管理功能。未登录用户提交购物车时应进入登录流程，购物车在登录前后继续保留。
+游客不能提交订单、查看订单或进入管理功能。未登录用户提交购物车时应进入登录流程，购物车在登录前后继续保留。
 
 饲养员可在饭团视图和管理视图之间切换，但这是同一账号的界面模式，不是账号切换。v1.0 已移除免密多账号切换及长期账号令牌列表，旧版 `mealmate_accounts` 本地数据在启动时清理。
 
@@ -95,16 +95,14 @@ pending -> accepted -> cooking -> done
 
 5. 禁止跳级、回退、重复设置状态或从 `done`/`cancelled` 重开。
 6. 只有订单本人可以把自己的 `pending` 订单改为 `cancelled`；饲养员和店长不能代取消，`accepted` 后不支持取消请求。
-7. 新订单可通知饲养员；`accepted`、`cooking`、`done` 状态变化可通知下单人。推送失败不得影响订单事务。
+7. 新订单和状态变化通过订单页查看；系统不发送后台通知，家庭成员可直接沟通。
 
-### 4.5 PWA 与 Web Push
+### 4.5 PWA
 
 - Manifest 提供应用名称、主题色、192/512 图标、`standalone` 展示模式。
 - Service Worker 使用 `injectManifest`，预缓存前端资源；菜单 API 使用 NetworkFirst，上传图片使用 CacheFirst。
 - 前端由 `virtual:pwa-register` 统一注册 Service Worker；新版本在后台安装后显示更新提示，由用户确认刷新。入口文件、`sw.js`、Manifest 和图标禁止长期缓存，带内容哈希的 `/assets/` 文件使用长期缓存。
-- Web Push 为可选能力。未同时配置 VAPID 公私钥时，系统明确显示未启用并软降级，不阻断核心点餐流程。
-- `VAPID_PRIVATE_KEY` 推荐为 PKCS8 `BEGIN PRIVATE KEY` PEM 文件路径。PEM 不得进入 Git；更换 VAPID 密钥后客户端必须重新订阅。
-- iOS 推送要求 iOS 16.4+ 且先把应用加入主屏幕。
+- Web Push 已停用，部署不需要 VAPID 或 FCM 网络；旧版推送接口仅保留兼容响应，不发送通知。
 
 ## 5. API 契约摘要
 
@@ -117,7 +115,7 @@ pending -> accepted -> cooking -> done
 | 标签 | `/api/tags` | 读取公开，写入为饲养员/店长 |
 | 菜品 | `/api/dishes` | 上架内容公开，管理为饲养员/店长 |
 | 订单 | `/api/orders` | 登录用户，结果和操作受角色/所有权约束 |
-| 推送 | `/api/push` | VAPID 状态公开，订阅与测试按端点鉴权 |
+| 推送兼容 | `/api/push` | 仅供旧版 PWA 获取停用状态，不保存订阅或发送通知 |
 | 配置 | `/api/config` | 读取公开，修改为店长 |
 
 所有受保护端点使用 `Authorization: Bearer <access_token>`。认证失败返回 401，角色或所有权不足返回 403，资源不存在返回 404，业务状态冲突或输入不合法返回 400/422。
@@ -130,7 +128,7 @@ pending -> accepted -> cooking -> done
 - `DishCategory`、`Dish`、`Tag`：分类、菜品、自由标签及多对多关系。
 - `DishImage`、`DishLink`：菜品图片、缩略图和参考链接。
 - `Order`、`OrderItem`：订单、状态、餐次、备注和明细。
-- `PushSubscription`：用户浏览器推送订阅。
+- `PushSubscription`：历史兼容表，停用后不再写入。
 - `SystemConfig`：店长/饲养员/饭团显示名称。
 
 ### 6.2 初始化与升级
@@ -151,7 +149,6 @@ pending -> accepted -> cooking -> done
 ### 7.2 可选配置
 
 - `DATABASE_URL`、Token 有效期、`UPLOAD_DIR`。
-- `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY`。
 - `VITE_API_BASE_URL`：仅跨源前端构建需要；默认同源。
 
 Docker Compose 提供 backend、frontend、caddy 三个服务。发布验证必须执行 `docker compose config`，并显式提供 `JWT_SECRET` 和 `ADMIN_INITIAL_PASSWORD` 测试值；还必须分别构建 backend/frontend 镜像，但无需启动真实生产服务。
@@ -196,7 +193,7 @@ Docker Compose 提供 backend、frontend、caddy 三个服务。发布验证必�
 - `accepted` 后的取消申请或人工审批流程。
 - 免密多账号切换。
 - 通用数据库迁移平台和自动备份服务。
-- WebSocket 实时同步；v1.0 使用页面刷新/轮询与可选 Web Push。
+- WebSocket 实时同步；v1.0 使用页面刷新获取最新状态。
 
 ## 11. 发布与运维责任
 

@@ -19,10 +19,6 @@ python-dotenv==1.2.3
 # 图片处理
 Pillow==12.3.0
 
-# Web Push (可选)
-py-vapid==1.9.4
-pywebpush==2.4.0
-
 # 数据校验与配置
 pydantic==2.12.5
 pydantic-settings==2.15.0

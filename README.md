@@ -4,7 +4,7 @@
 
 ## 技术栈与运行环境
 
-- 后端：Python 3.13、FastAPI、SQLAlchemy 2.0 异步 ORM、aiosqlite、SQLite、JWT、Pillow、Web Push。
+- 后端：Python 3.13、FastAPI、SQLAlchemy 2.0 异步 ORM、aiosqlite、SQLite、JWT、Pillow。
 - 前端：Node.js 22、Vue 3、TypeScript、Vite、Vant 4、Pinia、Vue Router、vite-plugin-pwa。
 - 部署：Docker Compose、Nginx、Caddy；生产前端默认通过同源 `/api` 和 `/uploads` 访问后端。
 
@@ -76,8 +76,6 @@ npm run dev
 | `REFRESH_TOKEN_EXPIRE_DAYS` | 否 | `7` | Refresh Token 有效期 |
 | `UPLOAD_DIR` | 否 | `uploads` | 菜品图片和自定义头像目录 |
 | `CORS_ORIGINS` | 否 | 本地 `3000` 来源 | 逗号分隔的精确允许来源；生产环境必须改为实际站点来源 |
-| `VAPID_PUBLIC_KEY` | 否 | 空 | Web Push 公钥；公私钥同时配置才启用真实推送 |
-| `VAPID_PRIVATE_KEY` | 否 | 空 | 推荐填写 PKCS8 PEM 私钥文件路径，禁止提交 PEM 文件 |
 | `VITE_API_BASE_URL` | 否 | 空（同源） | 前端构建期 API/上传基础地址 |
 
 ## 数据库初始化与迁移
@@ -101,7 +99,7 @@ docker compose exec backend python -m app.init_db
 
 PowerShell 使用 `$env:JWT_SECRET='...'` 和 `$env:ADMIN_INITIAL_PASSWORD='...'`。生产 HTTPS 部署需按实际域名调整 `docker/Caddyfile`；当前默认配置提供 HTTP 同源反向代理，适合本地验证，不应原样暴露到公网。
 
-SQLite 数据保存在 `backend/data/`，上传内容保存在 `backend/uploads/`。两者均为运行数据，不进入发布树，部署者必须同时备份。启用 VAPID 时，还需以环境变量和只读卷向 backend 容器提供公钥与 PKCS8 私钥文件；更换 VAPID 密钥会使已有浏览器订阅失效。
+SQLite 数据保存在 `backend/data/`，上传内容保存在 `backend/uploads/`。两者均为运行数据，不进入发布树，部署者必须同时备份。Web Push 已停用，不需要配置 VAPID，也不依赖 FCM 网络连通性；订单状态请在订单页查看。
 
 前端发布新版本时，只需重新构建 frontend 服务：
 

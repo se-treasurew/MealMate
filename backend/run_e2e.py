@@ -72,8 +72,6 @@ def main() -> int:
             "E2E_ADMIN_PASSWORD": admin_password,
             "E2E_BASE": base_url,
             "E2E_UPLOAD_DIR": str(upload_dir),
-            "VAPID_PUBLIC_KEY": "",
-            "VAPID_PRIVATE_KEY": "",
         })
 
         subprocess.run(

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE: int = 5 * 1024 * 1024  # 5MB
     ALLOWED_EXTENSIONS: set = {".jpg", ".jpeg", ".png", ".webp"}
 
-    # Web Push (可选)
+    # 兼容旧版 .env；推送功能已停用，这些值不会被读取。
     VAPID_PUBLIC_KEY: Optional[str] = None
     VAPID_PRIVATE_KEY: Optional[str] = None
 

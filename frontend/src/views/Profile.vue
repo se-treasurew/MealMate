@@ -60,25 +60,6 @@
         />
       </van-cell-group>
 
-      <!-- 推送通知 -->
-      <van-cell-group inset title="推送通知" style="margin-top: 16px">
-        <van-cell title="开启推送">
-          <template #right-icon>
-            <van-switch
-              :model-value="subscribed"
-              :disabled="!pushEnabled"
-              @update:model-value="onTogglePush"
-            />
-          </template>
-        </van-cell>
-        <van-cell
-          v-if="!pushEnabled"
-          title="提示"
-          label="服务端未配置 VAPID 密钥，推送不可用（可模拟测试）"
-        />
-        <van-cell title="发送测试推送" is-link @click="sendTestPush" />
-      </van-cell-group>
-
       <van-cell-group inset title="应用更新" style="margin-top: 16px">
         <van-cell
           title="检查更新"
@@ -212,11 +193,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { showConfirmDialog, showSuccessToast, showToast } from 'vant'
 import type { UploaderFileListItem } from 'vant'
 import { useUserStore } from '@/stores/user'
-import { usePush } from '@/composables/usePush'
 import { useAppUpdate } from '@/composables/useAppUpdate'
 import { imageUrl } from '@/api/dish'
 import { updateProfile, uploadAvatar } from '@/api/auth'
@@ -225,7 +205,6 @@ import { PRESET_AVATARS } from '@/utils/avatars'
 
 const userStore = useUserStore()
 const defaultAvatar = 'https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg'
-const { subscribed, pushEnabled, initPush, enablePush, disablePush, sendTestPush } = usePush()
 const { checking, checkForUpdate } = useAppUpdate()
 
 // 编辑资料
@@ -316,18 +295,13 @@ watch(forcedChange, (v) => {
   if (v) openPassword()
 }, { immediate: true })
 
-// 模式切换 / 推送
+// 模式切换
 const onSwitchMode = () => {
   userStore.switchMode()
   showToast(
     userStore.currentMode === 'feeder' ? '已切换到饲养员模式' : '已切换到饭团模式'
   )
 }
-const onTogglePush = async (val: boolean) => {
-  if (val) await enablePush()
-  else await disablePush()
-}
-
 const onCheckUpdate = async () => {
   if (checking.value) return
   const result = await checkForUpdate()
@@ -355,9 +329,6 @@ const onLogout = () => {
     .catch(() => {})
 }
 
-onMounted(() => {
-  initPush()
-})
 </script>
 
 <style scoped>

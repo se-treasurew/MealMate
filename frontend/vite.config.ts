@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [
     vue(),
     VitePWA({
-      // injectManifest：自定义 SW（src/sw.ts），支持 push 通知监听
+      // injectManifest：自定义 SW（src/sw.ts），用于缓存与版本更新
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',

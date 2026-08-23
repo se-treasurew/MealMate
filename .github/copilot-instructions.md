@@ -42,7 +42,7 @@ python scripts/check_release_tree.py
 - **Markdown 渲染**：前端输出必须经 DOMPurify 清理（见 `frontend/src/utils/markdown.ts`）。
 - **同源约定**：前端默认同源 `/api` 和 `/uploads`，`VITE_API_BASE_URL` 仅跨源部署时设置。生产构建产物不得包含 `localhost:8000`。
 - **PWA 更新**：SW 用 `injectManifest` 自定义（`frontend/src/sw.ts`）；新版本由用户确认后刷新。`index.html`、`sw.js`、manifest 禁止长期缓存。
-- **推送软降级**：未配置 VAPID 公私钥时推送明确显示未启用，推送失败不得影响订单事务。
+- **推送已停用**：`/api/push` 仅保留无数据库、无外部网络访问的旧客户端兼容响应；不得恢复真实推送而影响订单事务。
 
 ## 项目结构
 

@@ -193,7 +193,7 @@ async def create_order(
             f"{item_count} 份，期望{payload.meal_date} {payload.meal_type}",
         )
     except Exception:
-        pass  # 推送失败不影响下单
+        pass  # 兼容通知钩子不得影响下单
 
     return resp
 
