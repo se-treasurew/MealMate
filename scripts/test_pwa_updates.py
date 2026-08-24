@@ -15,6 +15,18 @@ class PwaUpdateSourceTests(unittest.TestCase):
         self.assertIn("registerType: 'autoUpdate'", source)
         self.assertIn("injectRegister: false", source)
 
+    def test_pwa_names_are_consistently_mealmate(self):
+        vite_source = self.read("frontend/vite.config.ts")
+        html_source = self.read("frontend/index.html")
+
+        self.assertIn("name: '饭饭之交'", vite_source)
+        self.assertIn("short_name: '饭饭之交'", vite_source)
+        self.assertIn(
+            '<meta name="apple-mobile-web-app-title" content="饭饭之交" />',
+            html_source,
+        )
+        self.assertIn("<title>饭饭之交</title>", html_source)
+
     def test_service_worker_can_activate_without_claiming_existing_pages(self):
         source = self.read("frontend/src/sw.ts")
 

@@ -19,7 +19,7 @@ export default defineConfig({
       },
       manifest: {
         name: '饭饭之交',
-        short_name: '饭饭',
+        short_name: '饭饭之交',
         description: '家庭私人点餐系统',
         theme_color: '#FF6B35',
         background_color: '#FFFFFF',

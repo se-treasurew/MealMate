@@ -140,18 +140,22 @@
             </van-field>
           </van-cell-group>
 
-          <!-- 图片上传（编辑时） -->
-          <div v-if="editingDish?.id" class="image-section">
+          <!-- 图片上传 -->
+          <div class="image-section">
             <div class="section-title">菜品图片</div>
             <van-uploader
               v-model="fileList"
               :after-read="onAfterRead"
               :max-size="5 * 1024 * 1024"
+              :disabled="saving"
               @oversize="showToast('图片不能超过 5MB')"
               multiple
-              :max-count="9"
+              :max-count="5"
             />
-            <div class="image-preview" v-if="editingDish.images.length">
+            <div v-if="!editingDish" class="upload-hint">
+              所选图片将在保存菜品后上传，每次最多 5 张
+            </div>
+            <div class="image-preview" v-if="editingDish?.images.length">
               <div
                 v-for="img in editingDish.images"
                 :key="img.id"
@@ -179,7 +183,14 @@
           </div>
 
           <div style="margin: 16px">
-            <van-button round block type="primary" native-type="submit">
+            <van-button
+              round
+              block
+              type="primary"
+              native-type="submit"
+              :loading="saving"
+              :disabled="saving"
+            >
               保存
             </van-button>
           </div>
@@ -233,6 +244,7 @@ const showEdit = ref(false)
 const editingDish = ref<Dish | null>(null)
 const showCategoryPicker = ref(false)
 const fileList = ref<UploaderFileListItem[]>([])
+const saving = ref(false)
 
 const form = reactive({
   name: '',
@@ -336,10 +348,12 @@ const onPickCategory = ({ selectedOptions }: { selectedOptions: { value: number 
 }
 
 const onSave = async () => {
+  if (saving.value) return
   if (!form.category_id) {
     showToast('请选择分类')
     return
   }
+  saving.value = true
   try {
     if (editingDish.value) {
       await updateDish(editingDish.value.id, {
@@ -361,13 +375,21 @@ const onSave = async () => {
         tag_names: selectedTagNames.value,
         links: form.links.filter((l) => l.url),
       })
+      editingDish.value = data
       // 上传图片
       if (fileList.value.length) {
         const files = fileList.value
           .map((f) => f.file)
           .filter(Boolean) as File[]
         if (files.length) {
-          await uploadDishImages(data.id, files)
+          try {
+            await uploadDishImages(data.id, files)
+          } catch (e) {
+            fileList.value = []
+            await Promise.all([loadDishes(), loadTags()])
+            showToast('菜品已创建，但图片上传失败，请重新选择图片')
+            return
+          }
         }
       }
       showSuccessToast('创建成功')
@@ -376,6 +398,8 @@ const onSave = async () => {
     await Promise.all([loadDishes(), loadTags()])
   } catch (e: any) {
     showToast(e.response?.data?.detail || '保存失败')
+  } finally {
+    saving.value = false
   }
 }
 
@@ -489,6 +513,11 @@ onMounted(async () => {
 .image-section,
 .link-section {
   margin: 8px 0;
+}
+.upload-hint {
+  padding: 0 16px 8px;
+  color: #969799;
+  font-size: 12px;
 }
 .image-preview {
   display: flex;

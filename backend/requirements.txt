@@ -19,6 +19,9 @@ python-dotenv==1.2.3
 # 图片处理
 Pillow==12.3.0
 
+# 隔离 E2E HTTP 客户端
+httpx==0.28.1
+
 # 数据校验与配置
 pydantic==2.12.5
 pydantic-settings==2.15.0
